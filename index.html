@@ -84,9 +84,57 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px}
   <div class="row" style="margin-top:10px">
     <button class="primary" id="parseBtn">Load data</button>
     <button id="exampleBtn">Load example data</button>
+    <button id="openConv">My data has dates across columns → convert it</button>
     <span class="muted" id="parseInfo"></span>
   </div>
   <div class="msg" id="parseMsg"></div>
+</section>
+
+
+<section class="card hidden" id="convCard">
+  <h2><span class="step" style="background:#7a5af8">⇄</span>Data converter: lab-notebook layout → required format</h2>
+  <p class="muted" style="margin-top:-6px">Use this if you record measurements in blocks: one block per group, with the group name and dates in the first row, <b>L / W</b> under each date, and one row per animal. Blocks can sit one below another, and empty cells are fine.</p>
+  <div class="two">
+    <div>
+      <pre style="background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;margin:0 0 8px;overflow:auto">OE        10.14         10.16         10.19
+          L      W      L      W      L      W
+white     5.1    4.0    6.3    4.8    9.3    6.5
+red       ...
+(blank row)
+Control   10.14         10.16         10.19
+          L      W      ...
+white     ...</pre>
+      <div class="muted">Each L/W pair becomes one row with Sample, Group, Width, Length and Date. Animals with the same name in different groups are kept separate.</div>
+    </div>
+    <div>
+      <div class="drop" id="convDrop" style="margin-bottom:8px">Drop an <b>.xlsx / .csv</b> here, or <label>choose a file<input type="file" id="convFile" accept=".xlsx,.xls,.csv,.txt,.tsv"></label>
+        <div id="convSheetBox" class="hidden" style="margin-top:8px"><label class="f">Sheet</label><select id="convSheet"></select></div></div>
+      <textarea id="convPaste" style="min-height:110px" placeholder="…or select the whole block(s) in Excel, including the group/date row and the L/W row, then copy and paste here."></textarea>
+    </div>
+  </div>
+  <div class="grid" style="margin-top:12px">
+    <div><label class="f">Date format in your sheet</label><select id="convFmt"><option value="md">Month.Day (10.14 = Oct 14)</option><option value="dm">Day.Month (14.10 = Oct 14)</option></select></div>
+    <div><label class="f">Year (if dates have no year)</label><input type="number" id="convYear"></div>
+    <div><label class="f">Sample names</label><label class="muted" style="display:block;margin-top:6px"><input type="checkbox" id="convPrefix"> Add group to name (e.g. OE-white)</label></div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button class="primary" id="convBtn">Convert</button>
+    <button id="convExample">Load example layout</button>
+    <span class="muted" id="convInfo"></span>
+  </div>
+  <div id="convOut" class="hidden" style="margin-top:14px">
+    <h3 style="margin-top:0">Injection / treatment start dates (optional, recommended)</h3>
+    <div class="muted" style="margin-bottom:6px">These turn calendar dates into "Day from injection" and "Day from treatment" columns. Fill in the "All groups" row, and only fill a group's row if that group started on a different date. If you leave them blank, the analysis can use "Days since first date in the study".</div>
+    <div class="scroll" style="max-height:220px"><table id="convDates"></table></div>
+    <div id="convWarn"></div>
+    <h3>Preview of converted data</h3>
+    <div class="scroll" style="max-height:300px"><table id="convPrev"></table></div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="convUse">Use this data in the analysis ↓</button>
+      <button id="convCopy">Copy converted table</button>
+      <span class="muted" id="convCopyInfo"></span>
+    </div>
+  </div>
 </section>
 
 <section class="card hidden" id="setCard">
@@ -316,11 +364,13 @@ function records(){
     const ds=rs.map(r=>r.date).filter(x=>!isNaN(x)); const fd=ds.length?Math.min(...ds):NaN;
     rs.forEach(r=>{ r.first=isNaN(r.date)||isNaN(fd)?NaN:r.date-fd; r.firstDate=fd; });
   });
+  const allD=out.map(r=>r.date).filter(x=>!isNaN(x)); const gmin=allD.length?Math.min(...allD):NaN;
+  out.forEach(r=>{ r.study=isNaN(r.date)||isNaN(gmin)?NaN:r.date-gmin; r.studyStart=gmin; });
   return out;
 }
 function setupModes(first){
   const recs=records(); const has=k=>recs.some(r=>!isNaN(r[k]));
-  const modes=[]; if(has('tx')) modes.push(['tx','Day from treatment start']); if(has('inj')) modes.push(['inj','Day from injection']); if(has('first')) modes.push(['first','Days since first measurement (from Date)']);
+  const modes=[]; if(has('tx')) modes.push(['tx','Day from treatment start']); if(has('inj')) modes.push(['inj','Day from injection']); if(has('study')) modes.push(['study','Days since first date in the study (shared day 0)']); if(has('first')) modes.push(['first','Days since each animal\'s first measurement']);
   const prev=$('xMode').value;
   $('xMode').innerHTML=modes.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
   if(!modes.length){ showMsg('No usable time column. Select a Date, Day-from-injection or Day-from-treatment column.',true); return; }
@@ -588,7 +638,7 @@ let colorMap={}, curPreset='Default';
 const colorFor=(g,i)=>colorMap[g]||(colorMap[g]=PRESETS[curPreset][i%PRESETS[curPreset].length]);
 const rgba=(hex,a)=>{ const n=parseInt(hex.slice(1),16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; };
 $('presetRow').innerHTML=Object.entries(PRESETS).map(([n,c])=>`<button class="preset" data-p="${esc(n)}">${c.slice(0,5).map(x=>`<i style="background:${x}"></i>`).join('')} ${esc(n)}</button>`).join('');
-const xLabel=m=>({tx:'Days from treatment start',inj:'Days from tumor injection',first:'Days since first measurement'}[m]);
+const xLabel=m=>({tx:'Days from treatment start',inj:'Days from tumor injection',study:'Days since study start',first:'Days since first measurement'}[m]);
 const yLabel=m=>({abs:'Tumor volume (mm³)',rel:'Relative tumor volume (V / V₀)',pct:'Change from baseline (%)'}[m]);
 const testName=(t,k)=>t==='nonpar'?(k>2?'Kruskal-Wallis':'Mann-Whitney U'):t==='ancova'?'ANCOVA (ln volume adjusted for ln baseline)':(k>2?'Welch ANOVA':'Welch t-test');
 const pairTestName=t=>t==='nonpar'?'Mann-Whitney U':t==='ancova'?'pairwise ANCOVA':'Welch t-test';
@@ -596,14 +646,15 @@ const pairTestName=t=>t==='nonpar'?'Mann-Whitney U':t==='ancova'?'pairwise ANCOV
 function compute(){
   R=analyze(false);
   if(!R){ ['permTable','sumTable','dayTable','qcTable','baseTable'].forEach(id=>$(id).innerHTML='<tr><td>No usable data. Check the column selections.</td></tr>'); drawCharts(); return; }
-  $('xModeSub').textContent=R.mode==='tx'?'Each animal\'s own treatment day 0 is aligned.':R.mode==='inj'?'Each animal\'s own injection day 0 is aligned.':'Day 0 = each animal\'s first measurement.';
+  $('xModeSub').textContent=R.mode==='tx'?'Each animal\'s own treatment day 0 is aligned.':R.mode==='inj'?'Each animal\'s own injection day 0 is aligned.':R.mode==='study'?'Day 0 = earliest date in the table (same calendar day for all animals).':'Day 0 = each animal\'s first measurement.';
   $('stepBox').style.display=R.align==='interp'?'':'none';
   renderBase(); renderQC(); renderStats(); renderMethods(); drawCharts();
 }
 function renderBase(){
   const r=R, notes=[];
   const txDates=uniq(r.mice.map(m=>m.txStart).filter(isFinite)), injDates=uniq(r.mice.map(m=>m.injStart).filter(isFinite)), fDates=uniq(r.mice.map(m=>m.firstDate).filter(isFinite));
-  const startDates=r.mode==='tx'?txDates:r.mode==='inj'?injDates:fDates;
+  const startDates=r.mode==='tx'?txDates:r.mode==='inj'?injDates:r.mode==='study'?[]:fDates;
+  if(r.mode==='study') notes.push(`<div class="note info">Day 0 = the earliest date in the table, the same calendar day for every animal. If groups were injected or treated on different dates, enter those dates in the converter (or add day columns) and align on "Day from treatment start" instead.</div>`);
   if(startDates.length>1){
     notes.push(`<div class="note info"><b>Different start dates detected:</b> ${startDates.length} different ${r.mode==='tx'?'treatment-start':r.mode==='inj'?'injection':'first-measurement'} dates (${startDates.sort((a,b)=>a-b).slice(0,6).map(fmtDate).join(', ')}${startDates.length>6?', …':''}).<br><b>Resolution:</b> animals are aligned on <b>${xLabel(r.mode).toLowerCase()}</b>, so each animal's day 0 is its own start and calendar dates are not used in the analysis.${r.mode!=='tx'&&txDates.length?' Treatment-start information is available: consider choosing "Day from treatment start" as the time axis.':''}</div>`);
   } else if(startDates.length===1) notes.push(`<div class="note ok">All animals share the same ${r.mode==='tx'?'treatment-start':r.mode==='inj'?'injection':'start'} date (${fmtDate(startDates[0])}).</div>`);
@@ -706,7 +757,7 @@ function drawCharts(){
       plugins:{legend:{position:'top',labels:{filter:(it,data)=>!data.datasets[it.datasetIndex]._ind,boxWidth:14,boxHeight:3}},
         title:{display:true,text:'Tumor growth'+(err!=='none'&&$('showMean').checked?` (mean ± ${err.toUpperCase()})`:''),font:{size:14}},
         tooltip:{callbacks:{label:c=>{ const d=c.dataset; const e=d._err?d._err[c.dataIndex]:NaN; return `${d._ind?d._g+' / ':''}${d.label}: ${fv(c.parsed.y)}${isFinite(e)?' ± '+fv(e):''}`; }}}},
-      scales:{x:{type:'linear',title:{display:true,text:xLabel(r.mode)},grid:{color:'#f0f2f5'}},
+      scales:{x:{type:'linear',min:r.start,max:r.end,title:{display:true,text:xLabel(r.mode)},grid:{color:'#f0f2f5'}},
         y:{type:logY?'logarithmic':'linear',beginAtZero:!logY&&r.metric!=='pct',suggestedMax:logY?undefined:ymax*1.08,title:{display:true,text:yLabel(r.metric)},grid:{color:'#eef0f3'}}}},
     plugins:[whiteBg,overlay]});
   // summary chart
@@ -751,6 +802,117 @@ $('copyStats').onclick=async()=>{
   try{ await navigator.clipboard.writeText(text); $('copyInfo').textContent='Copied ✓'; }
   catch(e){ $('paste').value=text; $('copyInfo').textContent='Your browser blocked automatic copying. The tables were placed in the text box in section 1; select all and copy.'; }
   setTimeout(()=>$('copyInfo').textContent='',5000);
+};
+
+
+/* ================= converter (wide lab-notebook layout -> long) ================= */
+let convWb=null, convLast=null;
+const isLab=(s,re)=>re.test(String(s||'').trim());
+const reL=/^(l|length|long|major|长|长径)$/i, reW=/^(w|width|short|minor|宽|短径)$/i;
+const isLabelRow=row=>row&&row.some(c=>isLab(c,reL))&&row.some(c=>isLab(c,reW));
+function dateCands(s,fmt,year){
+  s=String(s||'').trim(); if(!s) return null; let m;
+  if(/^\d{5}(\.\d+)?$/.test(s)){ const n=+s; if(n>20000&&n<80000) return {c:[Math.floor(n)-25569]}; }
+  if((m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) return {c:[Date.UTC(+m[1],m[2]-1,+m[3])/864e5]};
+  if((m=s.match(/^(\d{1,2})\s*[.\/\-月]\s*(\d{1,2})\s*(?:日)?(?:[.\/\-](\d{2,4}))?$/))){
+    let y=m[3]?+m[3]:year; if(y<100) y+=2000;
+    const a=+m[1], bs=m[2], b=+bs, alts=[b]; if(s.includes('.')&&bs.length===1&&!m[3]) alts.push(b*10);
+    const c=[]; alts.forEach(bb=>{ const mo=fmt==='md'?a:bb, d=fmt==='md'?bb:a; if(mo>=1&&mo<=12&&d>=1&&d<=31){ const t=Date.UTC(y,mo-1,d)/864e5; if(fmtDate(t).slice(5)===String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0')) c.push(t);} });
+    return c.length?{c,amb:c.length>1,raw:s,hasYear:!!m[3]}:null; }
+  const d=parseDate(s); return isNaN(d)?null:{c:[d]};
+}
+function resolveDates(list,warns,where){ // list of cand objects in column order -> day numbers
+  const out=list.map(x=>x&&x.c.length===1?x.c[0]:NaN);
+  list.forEach((x,i)=>{ if(!x||x.c.length<2) return;
+    const prev=out.slice(0,i).filter(isFinite).pop(), next=out.slice(i+1).find(isFinite);
+    const ok=x.c.filter(t=>(prev==null||t>prev)&&(next==null||t<next)); out[i]=(ok.length?ok:x.c)[0];
+    warns.push(`${where}: "${esc(x.raw)}" could be ${x.c.map(fmtDate).join(' or ')} (Excel drops a trailing 0). It was read as <b>${fmtDate(out[i])}</b> to keep the dates in order. Please check.`); });
+  for(let i=1;i<out.length;i++){ if(isFinite(out[i])&&isFinite(out[i-1])&&out[i]<out[i-1]-150&&list[i]&&!list[i].hasYear){ const d=new Date(out[i]*864e5); out[i]=Date.UTC(d.getUTCFullYear()+1,d.getUTCMonth(),d.getUTCDate())/864e5; } }
+  return out;
+}
+function convParse(rows){
+  rows=rows.map(r=>(r||[]).map(c=>String(c??'').trim()));
+  const fmt=$('convFmt').value, year=num($('convYear').value)||new Date().getFullYear();
+  const warns=[], out=[], groups=[]; let blocks=0;
+  for(let r=0;r<rows.length-1;r++){
+    if(!isLabelRow(rows[r+1])||isLabelRow(rows[r])) continue;
+    const hdr=rows[r], lab=rows[r+1]; blocks++;
+    const pairs=[]; lab.forEach((c,li)=>{ if(!isLab(c,reL)) return; let wi=-1; for(const d of [1,-1,2,-2]) if(isLab(lab[li+d],reW)){ wi=li+d; break; }
+      if(wi<0) return; const lo=Math.min(li,wi), hi=Math.max(li,wi); let ds=''; for(const c2 of [li,wi,lo-1,hi+1]) if(c2>=0&&hdr[c2]&&!(pairs.length&&pairs[pairs.length-1].dcol===c2)){ ds=hdr[c2]; pairs.push({li,wi,dcol:c2,ds}); return; }
+      pairs.push({li,wi,dcol:-1,ds:''}); });
+    if(!pairs.length) continue;
+    const first=Math.min(...pairs.map(p=>Math.min(p.li,p.wi)));
+    let g=hdr.slice(0,first).find(x=>x)||(r>0?rows[r-1].slice(0,first).find(x=>x):'')||('Group '+blocks);
+    if(!hdr.slice(0,first).some(x=>x)) warns.push(`Block ${blocks}: no group name was found left of the first date, so "${esc(g)}" is used.`);
+    // data rows
+    const data=[]; for(let k=r+2;k<rows.length;k++){ const row=rows[k]; if(!row.some(x=>x)) break; if(k+1<rows.length&&isLabelRow(rows[k+1])) break; if(isLabelRow(row)) break; data.push(row); }
+    let sc=0, best=-1; for(let c=0;c<first;c++){ const n=data.filter(row=>row[c]).length; if(n>best){best=n;sc=c;} }
+    const dates=resolveDates(pairs.map(p=>dateCands(p.ds,fmt,year)),warns,`Group ${esc(g)}`);
+    pairs.forEach((p,i)=>{ if(!p.ds) warns.push(`Group ${esc(g)}: the L/W pair in column ${String.fromCharCode(65+Math.min(p.li,25))} has no date above it.`); else if(!isFinite(dates[i])) warns.push(`Group ${esc(g)}: cannot read the date "${esc(p.ds)}".`); });
+    if(!groups.includes(g)) groups.push(g); else warns.push(`Group "${esc(g)}" appears in more than one block; the blocks were merged.`);
+    let nRows=0;
+    data.forEach((row,ri)=>{ const name=row[sc]||('Row '+(r+3+ri)); const s=$('convPrefix').checked?g+'-'+name:name;
+      pairs.forEach((p,i)=>{ const Ls=row[p.li]||'', Ws=row[p.wi]||''; if(!Ls&&!Ws) return; const L=num(Ls), W=num(Ws);
+        if(isNaN(L)||isNaN(W)){ warns.push(`${esc(g)} / ${esc(name)} on ${p.ds||'?'}: ${isNaN(L)?'L':'W'} is missing or not a number ("${esc(isNaN(L)?Ls:Ws)}"). The measurement was skipped.`); return; }
+        out.push({s,g,L,W,date:dates[i]}); nRows++; }); });
+    if(!nRows) warns.push(`Group ${esc(g)}: no measurements found.`);
+    r+=1+data.length;
+  }
+  return {out,groups,warns,blocks};
+}
+function convRender(){
+  if(!convLast) return; const {out,groups,warns}=convLast;
+  // dates table (keep values)
+  const keep={}; $('convDates').querySelectorAll('input').forEach(i=>keep[i.dataset.k]=i.value);
+  const row=(g,label)=>`<tr><td>${label}</td><td><input type="date" data-k="inj|${esc(g)}" value="${keep['inj|'+g]||''}"></td><td><input type="date" data-k="tx|${esc(g)}" value="${keep['tx|'+g]||''}"></td></tr>`;
+  $('convDates').innerHTML='<tr><th>Group</th><th>Tumor injection date</th><th>Treatment start date</th></tr>'+row('*','<b>All groups</b>')+groups.map(g=>row(g,esc(g))).join('');
+  convBuild(); $('convWarn').innerHTML=warns.length?`<div class="note warn"><b>Please check (${warns.length}):</b><br>${warns.slice(0,30).join('<br>')}${warns.length>30?'<br>…':''}</div>`:'<div class="note ok">Converted without problems.</div>';
+}
+function convBuild(){
+  const {out}=convLast; const get=(k,g)=>{ const v=$('convDates').querySelector(`input[data-k="${k}|${CSS.escape(g)}"]`)?.value||$('convDates').querySelector(`input[data-k="${k}|*"]`)?.value||''; return v?parseDate(v):NaN; };
+  const hasInj=convLast.groups.some(g=>isFinite(get('inj',g))), hasTx=convLast.groups.some(g=>isFinite(get('tx',g)));
+  const hdr=['Sample','Group','Width','Length','Date',...(hasInj?['Day_injection']:[]),...(hasTx?['Day_treatment']:[])];
+  const rows=out.slice().sort((a,b)=>a.g===b.g?(a.s===b.s?a.date-b.date:0):0).map(o=>[o.s,o.g,o.W,o.L,fmtDate(o.date),...(hasInj?[isFinite(get('inj',o.g))?o.date-get('inj',o.g):'']:[]),...(hasTx?[isFinite(get('tx',o.g))?o.date-get('tx',o.g):'']:[])]);
+  convLast.text=[hdr.join('\t'),...rows.map(r=>r.join('\t'))].join('\n');
+  $('convPrev').innerHTML='<tr>'+hdr.map(h=>`<th>${h}</th>`).join('')+'</tr>'+rows.slice(0,200).map(r=>'<tr>'+r.map(c=>`<td>${esc(c)}</td>`).join('')+'</tr>').join('')+(rows.length>200?`<tr><td colspan="${hdr.length}" class="muted">… ${rows.length-200} more rows</td></tr>`:'');
+  const mice=new Set(out.map(o=>o.g+'|'+o.s)).size;
+  $('convInfo').textContent=`${convLast.blocks} block(s), ${convLast.groups.length} group(s), ${mice} animals, ${out.length} measurements`;
+}
+function convRun(rows){
+  if(!rows||!rows.length){ $('convInfo').textContent='Nothing to convert.'; return; }
+  convLast=convParse(rows);
+  if(!convLast.blocks){ $('convOut').classList.add('hidden'); $('convInfo').innerHTML='<span style="color:var(--bad)">No block found. Each block needs a row of L / W labels directly under the row with the group name and dates.</span>'; return; }
+  $('convOut').classList.remove('hidden'); convRender();
+}
+function convRows(){ if(convWb&&!$('convPaste').value.trim()){ const ws=convWb.Sheets[$('convSheet').value]; return XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''}); }
+  const t=$('convPaste').value.replace(/\r/g,''); if(!t.trim()) return []; const lines=t.split('\n'); const d=lines.some(l=>l.includes('\t'))?'\t':(lines[0].split(';').length>lines[0].split(',').length?';':',');
+  return lines.map(l=>splitLine(l,d)); }
+$('convYear').value=new Date().getFullYear();
+$('openConv').onclick=()=>{ $('convCard').classList.toggle('hidden'); if(!$('convCard').classList.contains('hidden')) $('convCard').scrollIntoView({behavior:'smooth'}); };
+$('convBtn').onclick=()=>convRun(convRows());
+['convFmt','convYear','convPrefix'].forEach(id=>$(id).onchange=()=>{ if(convLast) convRun(convRows()); });
+$('convSheet').onchange=()=>{ $('convPaste').value=''; convRun(convRows()); };
+$('convDates').oninput=()=>{ if(convLast) convBuild(); };
+$('convPaste').oninput=()=>{ if($('convPaste').value.trim()){ convWb=null; $('convSheetBox').classList.add('hidden'); } };
+function convFile(file){ const rd=new FileReader(), name=file.name.toLowerCase();
+  if(/\.(xlsx|xls)$/.test(name)){ if(typeof XLSX==='undefined'){ $('convInfo').textContent='The Excel parser failed to load. Please copy and paste the cells instead.'; return; }
+    rd.onload=ev=>{ try{ convWb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'}); $('convSheet').innerHTML=convWb.SheetNames.map(n=>`<option>${esc(n)}</option>`).join('');
+      $('convSheetBox').classList.toggle('hidden',convWb.SheetNames.length<2); $('convPaste').value=''; convRun(convRows()); }catch(e){ $('convInfo').textContent='Failed to read file: '+e.message; } }; rd.readAsArrayBuffer(file); }
+  else { rd.onload=ev=>{ convWb=null; $('convPaste').value=ev.target.result; convRun(convRows()); }; rd.readAsText(file); } }
+$('convFile').onchange=e=>{ if(e.target.files[0]) convFile(e.target.files[0]); };
+const cdrop=$('convDrop');
+['dragenter','dragover'].forEach(ev=>cdrop.addEventListener(ev,e=>{e.preventDefault();cdrop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>cdrop.addEventListener(ev,e=>{e.preventDefault();cdrop.classList.remove('over');}));
+cdrop.addEventListener('drop',e=>{ const fl=e.dataTransfer.files[0]; if(fl) convFile(fl); });
+$('convUse').onclick=()=>{ if(!convLast||!convLast.text) return; $('paste').value=convLast.text; load(parseText(convLast.text)); $('setCard').scrollIntoView({behavior:'smooth'}); };
+$('convCopy').onclick=async()=>{ if(!convLast) return; try{ await navigator.clipboard.writeText(convLast.text); $('convCopyInfo').textContent='Copied ✓'; }catch(e){ $('convCopyInfo').textContent='Your browser blocked copying. Use "Use this data in the analysis" instead; the table will appear in the text box in section 1.'; } setTimeout(()=>$('convCopyInfo').textContent='',5000); };
+$('convExample').onclick=()=>{
+  const rnd=rng(77), dates=['10.14','10.16','10.19','10.21','10.23'], mice=['white','black','red','purple','blue'];
+  const G=[['OE',0.16],['Control',0.09]]; const lines=[];
+  G.forEach(([g,rate],gi)=>{ lines.push([g,...dates.flatMap(d=>[d,'',''])].join('\t')); lines.push(['',...dates.flatMap(()=>['L','W',''])].join('\t'));
+    mice.forEach((m,mi)=>{ const v0=60+40*rnd(), r=rate*(0.8+0.4*rnd()); lines.push([m,...dates.flatMap((d,di)=>{ if(gi===0&&mi===1&&di>2) return ['','','']; const day=[0,2,5,7,9][di]; const V=v0*Math.exp(r*day); const ratio=1.3+0.3*rnd(); const W=Math.cbrt(2*V/ratio); return [(ratio*W).toFixed(1),W.toFixed(1),''];})].join('\t')); });
+    lines.push(''); lines.push(''); });
+  convWb=null; $('convSheetBox').classList.add('hidden'); $('convPaste').value=lines.join('\n'); convRun(convRows());
 };
 
 /* ================= events ================= */
