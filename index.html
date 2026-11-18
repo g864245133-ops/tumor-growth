@@ -20,6 +20,9 @@ main{max-width:1180px;margin:0 auto;padding:12px 24px 60px;display:grid;gap:16px
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:0}
 .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
 .card h3{font-size:14px;margin:20px 0 8px}
+.card h4{font-size:13px;margin:18px 0 6px;color:#344054}
+.ren input{font:inherit;width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:6px}
+.ren input.ord{width:56px}
 .step{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;align-items:center;justify-content:center;flex:none}
 textarea{width:100%;min-height:140px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical}
 button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 14px;cursor:pointer;color:var(--ink)}
@@ -148,6 +151,15 @@ white     ...</pre>
     <div><label class="f">Day from injection (optional)</label><select id="cInj"></select></div>
     <div><label class="f">Day from treatment (optional)</label><select id="cTx"></select></div>
   </div>
+  <details id="renameBox" open style="margin-top:14px">
+    <summary>Rename / reorder groups and samples</summary>
+    <div class="muted" style="margin:6px 0 8px">Type a new name to replace the original one (your file is not changed). "Order" sets the order of groups in plots and tables. Giving two groups the same name merges them.</div>
+    <div class="two">
+      <div class="scroll ren" style="max-height:280px"><table id="renG"></table></div>
+      <div class="scroll ren" style="max-height:280px"><table id="renS"></table></div>
+    </div>
+    <div class="row" style="margin-top:8px"><button id="renReset">Undo all renames</button><span class="muted" id="renInfo"></span></div>
+  </details>
   <div class="grid" style="margin-top:16px">
     <div><label class="f">Volume formula</label>
       <select id="formula"><option value="half">V = L × W² / 2</option><option value="pi6">V = π/6 × L × W²</option></select>
@@ -163,8 +175,11 @@ white     ...</pre>
   </div>
   <div class="grid" style="margin-top:16px">
     <div><label class="f">Y variable</label>
-      <select id="metric"><option value="abs">Tumor volume (mm³)</option><option value="rel">Relative tumor volume (V / V₀)</option><option value="pct">% change from baseline</option></select>
-      <div class="sub">V₀ = baseline volume at the start of the analysis window.</div></div>
+      <select id="metric"><option value="abs">Tumor volume (mm³), no normalization</option><option value="rel">Relative tumor volume, V / V₀</option><option value="pct">% change from baseline, (V − V₀) / V₀ × 100</option><option value="delta">Volume increase, V − V₀ (mm³)</option><option value="log2">log2 fold change, log2(V / V₀)</option><option value="tc">% of control group mean on the same day (T/C %)</option></select>
+      <div class="sub">V₀ = each animal's baseline volume (choose which measurement on the right).</div></div>
+    <div><label class="f">Baseline V₀ used for normalization</label>
+      <select id="baseRef"><option value="window">Last measurement on/before the window start</option><option value="first">Each animal's first measurement</option><option value="day">Measurement closest to a chosen day</option></select></div>
+    <div id="baseDayBox"><label class="f">Baseline day</label><input type="number" id="baseDay" value="0"></div>
     <div><label class="f">Statistical test</label>
       <select id="test"><option value="param">Parametric: Welch t-test / Welch ANOVA</option><option value="nonpar">Non-parametric: Mann-Whitney / Kruskal-Wallis</option><option value="ancova">ANCOVA: adjust for baseline volume</option></select></div>
     <div><label class="f">Transform for testing</label>
@@ -231,15 +246,31 @@ white     ...</pre>
   <h2><span class="step">6</span>Statistics</h2>
   <div class="row" style="margin-bottom:6px"><button id="copyStats">Copy all result tables (paste into Excel / Prism)</button><span class="muted" id="copyInfo"></span></div>
 
-  <h3>A. Whole-curve comparison — permutation test</h3>
+  <h3>A. Whole-curve comparison (overall growth trend)</h3>
+  <div class="muted">Four complementary approaches. A1 (permutation) and A2 (mixed model) are the recommended primary tests; A3 needs complete data; A4 compares how fast tumors reach an endpoint.</div>
+  <h4>A1. Permutation test of growth curves</h4>
   <div class="muted" style="margin-bottom:8px" id="permNote"></div>
   <div class="scroll" style="max-height:300px"><table id="permTable"></table></div>
+  <h4>A2. Linear mixed-effects model: ln(volume) ~ group × time + random intercept &amp; slope per animal</h4>
+  <div class="muted" style="margin-bottom:8px" id="lmmNote"></div>
+  <div class="two"><div class="scroll" style="max-height:300px"><table id="lmmTable"></table></div><div class="scroll" style="max-height:300px"><table id="lmmEst"></table></div></div>
+  <h4>A3. Two-way repeated-measures ANOVA (group × time)</h4>
+  <div class="muted" style="margin-bottom:8px" id="rmNote"></div>
+  <div class="scroll" style="max-height:260px"><table id="rmTable"></table></div>
+  <h4>A4. Time to endpoint: Kaplan-Meier &amp; log-rank test</h4>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));max-width:620px;margin-bottom:8px">
+    <div><label class="f">Endpoint</label><select id="kmType"><option value="fold">Volume reaches × baseline V₀</option><option value="vol">Volume reaches (mm³)</option></select></div>
+    <div><label class="f">Threshold</label><input type="number" id="kmThr" value="4" min="0" step="any"></div>
+  </div>
+  <div class="muted" style="margin-bottom:8px" id="kmNote"></div>
+  <div class="two"><div class="scroll" style="max-height:320px"><table id="kmTable"></table></div><div class="chartBox small"><canvas id="chart3"></canvas></div></div>
 
-  <h3>B. Per-animal growth summaries</h3>
+  <h3>B. Per-animal growth summaries &amp; tumor growth inhibition</h3>
   <div class="two">
     <div>
       <div class="scroll" style="max-height:340px"><table id="sumTable"></table></div>
       <div class="muted" style="margin-top:6px" id="sumNote"></div>
+      <div class="scroll" style="max-height:240px;margin-top:10px"><table id="tgiTable"></table></div>
     </div>
     <div>
       <div class="row" style="margin-bottom:6px"><label class="f" style="margin:0">Plot:</label>
@@ -265,6 +296,9 @@ white     ...</pre>
       <p>Volume is calculated with the modified ellipsoid formula <code>V = L × W² / 2</code> (Euler et al.; widely used for subcutaneous xenografts), where L is the longest diameter and W the perpendicular shorter diameter. <code>π/6 × L × W²</code> (≈ 0.52 × L × W²) is offered as an alternative. If W &gt; L in a row, the two are swapped automatically.</p>
       <h4>Whole-curve comparison (growth trend)</h4>
       <p><b>Primary test: permutation test of growth curves</b> (Elso et al., 2004, <i>Genes &amp; Immunity</i>; Baldwin et al., 2007; implemented in R as <code>statmod::compareGrowthCurves</code>). For each pair of groups, a t-statistic is computed at every time point and averaged over time. Group labels are then randomly re-assigned among the animals (whole curves are permuted, so the repeated-measures structure of each animal is preserved) thousands of times. The p-value is the proportion of permuted statistics at least as extreme as the observed one. With 3 or more groups, an overall test uses the time-averaged one-way ANOVA F statistic in the same way. Pairwise p-values are Holm-adjusted. Why this method: it makes no assumption about the shape of the curve or about normality, it handles animals that leave the study early (time points with fewer than 2 animals per group are skipped), and it is valid for the small group sizes typical of mouse studies.</p>
+      <p><b>Linear mixed-effects model</b> (as used by TumGrowth, Enot et al., 2018, <i>OncoImmunology</i>). Log volume is modeled as group + time + group × time, with a random intercept and a random slope for each animal (each mouse has its own starting size and growth rate). It uses every measurement, handles missing days and animals removed early, and the group × time likelihood-ratio test asks whether growth <i>rates</i> differ. With small groups the χ² approximation can be slightly optimistic, so read it together with A1.</p>
+      <p><b>Two-way repeated-measures ANOVA</b> (group × time, Greenhouse-Geisser corrected): the classic approach (Prism's "two-way RM ANOVA"). It needs a value for every animal on every day, so it uses the days up to the last common day and drops animals with gaps.</p>
+      <p><b>Time to endpoint (Kaplan-Meier + log-rank)</b>: the day each tumor reaches a threshold, either a fixed volume or a multiple of its own baseline (e.g. quadrupling time, which is baseline-independent), with non-reaching animals censored. This is useful when animals are removed at a humane endpoint.</p>
       <p><b>Supporting analyses: per-animal summary measures</b> (Matthews et al., 1990, <i>BMJ</i>). Each animal's curve is reduced to a single number, so each animal contributes exactly one value and standard two-group or multi-group tests apply. <b>Specific growth rate</b> is the slope of ln(V+1) against time (log-linear regression). It is independent of the starting volume, and the doubling time is ln2 / rate. <b>Area under the curve (AUC)</b> uses the trapezoidal rule up to the last day on which all animals are still measured, so that animals removed early do not bias it.</p>
       <h4>Comparison on each day</h4>
       <p>Two groups: <b>Welch's t-test</b> (does not assume equal variances). Three or more groups: <b>Welch's one-way ANOVA</b>, followed by pairwise Welch t-tests with <b>Holm</b> correction. Non-parametric option: Mann-Whitney U (exact when there are no ties) and Kruskal-Wallis. Tumor volumes are right-skewed and their variance grows with the mean, so volumes are log-transformed, as ln(V+1), before testing by default. Testing each day separately inflates false positives, so the Holm correction can be applied across all days. The whole-curve test (A) is the preferred single answer to "do the groups grow differently?".</p>
@@ -272,7 +306,7 @@ white     ...</pre>
       <p>Animals are aligned by <b>day from treatment start</b> (or day from injection), not by calendar date. Each animal's day 0 is its own start, so cohorts enrolled on different dates are directly comparable. If only dates are given for some rows, the missing day numbers are filled in from that animal's other rows (date − day = its start date). Without day columns, days are counted from each animal's first measurement.</p>
       <p>If animals were measured on different days (e.g. day 7 vs. day 8), the "Interpolate to a common day grid" option estimates each animal's volume on a shared grid. Interpolation is linear on the log scale (exponential growth between measurements) and only within each animal's observed range; it never extrapolates.</p>
       <h4>When baseline volumes differ</h4>
-      <p>1) The baseline check (section 3) tests whether groups differ at the start. 2) <b>Relative tumor volume</b> (V / V₀) or % change normalizes each animal to its own baseline. 3) <b>ANCOVA</b>, with ln(V+1) adjusted for ln(V₀+1) as a covariate, is the most efficient adjustment when baselines differ. It is recommended over simple normalization when the imbalance is large (Vickers &amp; Altman, 2001, <i>BMJ</i>). 4) The <b>growth rate</b> (slope on the log scale) is unaffected by the starting size. Best practice is to randomize animals to groups once tumors reach a target size, so baselines are balanced from the start.</p>
+      <p>1) The baseline check (section 3) tests whether groups differ at the start. 2) <b>Normalization</b> to each animal's own baseline V₀: relative volume V/V₀, % change, increase V − V₀, or log2 fold change. V₀ can be the measurement at the window start, each animal's <i>first</i> measurement (useful when start dates differ), or the measurement closest to a chosen day. <b>T/C %</b> expresses each animal relative to the control-group mean on the same day. 3) <b>ANCOVA</b>, with ln(V+1) adjusted for ln(V₀+1) as a covariate, is the most efficient adjustment when baselines differ. It is recommended over simple normalization when the imbalance is large (Vickers &amp; Altman, 2001, <i>BMJ</i>). 4) The <b>growth rate</b> (slope on the log scale) is unaffected by the starting size. Best practice is to randomize animals to groups once tumors reach a target size, so baselines are balanced from the start.</p>
     </div>
   </details>
 </section>
@@ -282,7 +316,7 @@ white     ...</pre>
 <script>
 (function(){
 const $=id=>document.getElementById(id);
-let raw=[], headers=[], excludedMice=new Set(), chart=null, chart2=null, R=null;
+let raw=[], headers=[], excludedMice=new Set(), chart=null, chart2=null, chart3=null, R=null;
 
 /* ================= parsing ================= */
 function parseText(txt){
@@ -330,7 +364,7 @@ function load(rows){
   if(!rows.length){ showMsg('No data was read.',true); return; }
   const {hdr,objs}=rowsToObjects(rows);
   if(hdr.length<4){ showMsg('At least 4 columns are needed (sample, group, width, length) plus a time column. Please include the header row.',true); return; }
-  headers=hdr; raw=objs; excludedMice=new Set();
+  headers=hdr; raw=objs; excludedMice=new Set(); renG={}; renS={}; renOrd={};
   const opt=none=>(none?'<option value="">(none)</option>':'')+headers.map(h=>`<option>${esc(h)}</option>`).join('');
   ['cSample','cGroup','cWid','cLen'].forEach(id=>$(id).innerHTML=opt(false));
   ['cDate','cInj','cTx'].forEach(id=>$(id).innerHTML=opt(true));
@@ -341,7 +375,7 @@ function load(rows){
   $('winFrom').value=''; $('winTo').value='';
   $('parseInfo').textContent=`Read ${raw.length} rows, ${headers.length} columns`;
   ['setCard','baseCard','qcCard','plotCard','statCard','methCard'].forEach(id=>$(id).classList.remove('hidden'));
-  setupModes(true);
+  renderRename(); setupModes(true);
 }
 function showMsg(t,err){ const m=$('parseMsg'); m.textContent=t; m.className='msg'+(err?' err':''); m.style.display='block'; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -357,17 +391,41 @@ const fmtDate=d=>isNaN(d)?'—':new Date(d*864e5).toISOString().slice(0,10);
 const uniq=a=>{ const s=new Set(),o=[]; a.forEach(x=>{ if(!s.has(x)){s.add(x);o.push(x);} }); return o; };
 const median=a=>{ const s=[...a].sort((x,y)=>x-y), n=s.length; return n?(n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2):NaN; };
 
+/* ================= rename ================= */
+let renG={}, renS={}, renOrd={};
+function origNames(){
+  const cs=$('cSample').value, cg=$('cGroup').value, groups=[], samples=[], seen=new Set(), cnt={};
+  raw.forEach(r=>{ const os=String(r[cs]??'').trim(), og=String(r[cg]??'').trim(); if(!os||!og) return;
+    if(!groups.includes(og)) groups.push(og); const k=og+'\u0001'+os; if(!seen.has(k)){ seen.add(k); samples.push([og,os]); cnt[og]=(cnt[og]||0)+1; } });
+  return {groups,samples,cnt};
+}
+function renderRename(){
+  const {groups,samples,cnt}=origNames();
+  $('renG').innerHTML='<tr><th>Order</th><th>Original group</th><th>New name</th><th class="n">Animals</th></tr>'+groups.map((g,i)=>`<tr><td><input class="ord" type="number" data-kind="o" data-k="${esc(g)}" value="${isFinite(renOrd[g])?renOrd[g]:i+1}"></td><td>${esc(g)}</td><td><input data-kind="g" data-k="${esc(g)}" value="${esc(renG[g]||'')}" placeholder="${esc(g)}"></td><td class="n">${cnt[g]}</td></tr>`).join('');
+  $('renS').innerHTML='<tr><th>Group</th><th>Original sample</th><th>New name</th></tr>'+samples.map(([g,s])=>{ const k=g+'\u0001'+s; return `<tr><td>${esc(renG[g]||g)}</td><td>${esc(s)}</td><td><input data-kind="s" data-k="${esc(k)}" value="${esc(renS[k]||'')}" placeholder="${esc(s)}"></td></tr>`; }).join('');
+  const nr=Object.values(renG).filter(Boolean).length+Object.values(renS).filter(Boolean).length; $('renInfo').textContent=nr?`${nr} name(s) changed`:'';
+}
+function onRename(e){ const t=e.target, k=t.dataset.k, kind=t.dataset.kind; if(!kind) return;
+  if(kind==='g') renG[k]=t.value; else if(kind==='s') renS[k]=t.value; else if(kind==='o') renOrd[k]=num(t.value);
+  excludedMice=new Set(); setTimeout(()=>{ renderRename(); setupModes(false); },0); }
+$('renG').addEventListener('change',onRename); $('renS').addEventListener('change',onRename);
+$('renReset').onclick=()=>{ renG={}; renS={}; renOrd={}; renderRename(); setupModes(false); };
+function orderedGroups(recs){ const og=uniq(recs.map(r=>r.og)); const key={};
+  recs.forEach(r=>{ const o=isFinite(renOrd[r.og])?renOrd[r.og]:og.indexOf(r.og)+1; const kk=o*1000+og.indexOf(r.og); key[r.g]=Math.min(key[r.g]??Infinity,kk); });
+  return uniq(recs.map(r=>r.g)).sort((a,b)=>key[a]-key[b]); }
+
 /* ================= records ================= */
 function volume(L,W){ return $('formula').value==='pi6' ? Math.PI/6*L*W*W : L*W*W/2; }
 function records(){
   const c={s:$('cSample').value,g:$('cGroup').value,l:$('cLen').value,w:$('cWid').value,d:$('cDate').value,i:$('cInj').value,t:$('cTx').value};
   const out=[];
   raw.forEach((r,idx)=>{
-    const s=String(r[c.s]??'').trim(), g=String(r[c.g]??'').trim(); if(!s||!g) return;
+    const os=String(r[c.s]??'').trim(), og=String(r[c.g]??'').trim(); if(!os||!og) return;
+    const g=(renG[og]||'').trim()||og, s=(renS[og+'\u0001'+os]||'').trim()||os;
     let L=num(r[c.l]), W=num(r[c.w]), swapped=false;
     if(!isNaN(L)&&!isNaN(W)&&W>L){ [L,W]=[W,L]; swapped=true; }
     const V=(isNaN(L)||isNaN(W))?NaN:volume(L,W);
-    out.push({idx,s,g,key:g+'\u0001'+s,L,W,V,swapped,date:c.d?parseDate(r[c.d]):NaN,inj:c.i?num(r[c.i]):NaN,tx:c.t?num(r[c.t]):NaN});
+    out.push({idx,s,g,og,os,key:g+'\u0001'+s,L,W,V,swapped,date:c.d?parseDate(r[c.d]):NaN,inj:c.i?num(r[c.i]):NaN,tx:c.t?num(r[c.t]):NaN});
   });
   const by=new Map(); out.forEach(r=>{ if(!by.has(r.key)) by.set(r.key,[]); by.get(r.key).push(r); });
   by.forEach(rs=>{
@@ -389,7 +447,7 @@ function setupModes(first){
   $('xMode').innerHTML=modes.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
   if(!modes.length){ showMsg('No usable time column. Select a Date, Day-from-injection or Day-from-treatment column.',true); return; }
   if(!first && modes.some(m=>m[0]===prev)) $('xMode').value=prev;
-  const groups=uniq(recs.map(r=>r.g)); const pc=$('ctrl').value;
+  const groups=orderedGroups(recs); const pc=$('ctrl').value;
   $('ctrl').innerHTML=groups.map(g=>`<option>${esc(g)}</option>`).join('');
   $('ctrl').value=groups.includes(pc)?pc:(groups.find(g=>/vehicle|control|ctrl|pbs|saline|vector|untreated|isotype|igg|placebo|mock|^nc$|对照/i.test(g))||groups[0]);
   if(first) autoAlign();
@@ -520,12 +578,118 @@ const fv=v=>(v==null||!isFinite(v))?'—':(Math.abs(v)>=100?v.toFixed(0):Math.ab
 const fp=p=>(p==null||isNaN(p))?'—':(p<0.0001?'<0.0001':p<0.001?p.toFixed(4):p.toFixed(3));
 const stars=p=>isNaN(p)?'':(p<0.0001?'****':p<0.001?'***':p<0.01?'**':p<0.05?'*':'ns');
 
+
+/* ----- linear mixed model (ML, random intercept + slope), Nelder-Mead ----- */
+function nelderMead(fn,x0,step=0.5,iters=800){
+  const n=x0.length; let P=[x0.slice()]; for(let i=0;i<n;i++){ const x=x0.slice(); x[i]+=step; P.push(x); }
+  let F=P.map(fn);
+  for(let it=0;it<iters;it++){
+    const o=P.map((p,i)=>i).sort((a,b)=>F[a]-F[b]); P=o.map(i=>P[i]); F=o.map(i=>F[i]);
+    if(Math.abs(F[n]-F[0])<1e-10*(Math.abs(F[0])+1e-10)&&it>50) break;
+    const c=Array(n).fill(0); for(let i=0;i<n;i++) for(let d=0;d<n;d++) c[d]+=P[i][d]/n;
+    const at=t=>c.map((v,d)=>v+t*(P[n][d]-v));
+    const xr=at(-1), fr=fn(xr);
+    if(fr<F[0]){ const xe=at(-2), fe=fn(xe); if(fe<fr){P[n]=xe;F[n]=fe;} else {P[n]=xr;F[n]=fr;} }
+    else if(fr<F[n-1]){ P[n]=xr; F[n]=fr; }
+    else { const xc=fr<F[n]?at(-0.5):at(0.5), fc=fn(xc);
+      if(fc<Math.min(fr,F[n])){ P[n]=xc; F[n]=fc; }
+      else { for(let i=1;i<=n;i++){ P[i]=P[i].map((v,d)=>P[0][d]+0.5*(v-P[0][d])); F[i]=fn(P[i]); } } }
+  }
+  let b=0; for(let i=1;i<=n;i++) if(F[i]<F[b]) b=i; return {x:P[b],f:F[b]};
+}
+function lmmFit(anims,design){ // anims: [{g,obs:[{t,y}]}]; design(g,t)->row
+  const pre=anims.map(a=>{ const X=a.obs.map(o=>design(a.g,o.t)), y=a.obs.map(o=>o.y), Z=a.obs.map(o=>[1,o.t]); const p=X[0].length;
+    const XtX=Array.from({length:p},(_,i)=>Array.from({length:p},(_,j)=>X.reduce((s,r)=>s+r[i]*r[j],0)));
+    const Xty=Array.from({length:p},(_,i)=>X.reduce((s,r,k)=>s+r[i]*y[k],0));
+    const ZtZ=[[a.obs.length,Z.reduce((s,z)=>s+z[1],0)],[0,Z.reduce((s,z)=>s+z[1]*z[1],0)]]; ZtZ[1][0]=ZtZ[0][1];
+    const ZtX=[0,1].map(i=>Array.from({length:p},(_,j)=>X.reduce((s,r,k)=>s+Z[k][i]*r[j],0)));
+    const Zty=[0,1].map(i=>Z.reduce((s,z,k)=>s+z[i]*y[k],0));
+    return {XtX,Xty,yty:y.reduce((s,v)=>s+v*v,0),ZtZ,ZtX,Zty,n:y.length,p}; });
+  const N=pre.reduce((s,a)=>s+a.n,0), p=pre[0].p;
+  const evalT=th=>{ const L=[[th[0],0],[th[1],th[2]]];
+    const A=Array.from({length:p},()=>Array(p).fill(0)), b=Array(p).fill(0); let yy=0, ld=0;
+    for(const a of pre){
+      // M = I + L' ZtZ L
+      const ZL=[[a.ZtZ[0][0]*L[0][0]+a.ZtZ[0][1]*L[1][0], a.ZtZ[0][1]*L[1][1]],[a.ZtZ[1][0]*L[0][0]+a.ZtZ[1][1]*L[1][0], a.ZtZ[1][1]*L[1][1]]];
+      const M=[[1+L[0][0]*ZL[0][0]+L[1][0]*ZL[1][0], L[0][0]*ZL[0][1]+L[1][0]*ZL[1][1]],[0,1+L[1][1]*ZL[1][1]]]; M[1][0]=M[0][1];
+      const det=M[0][0]*M[1][1]-M[0][1]*M[1][0]; if(!(det>0)) return null; ld+=Math.log(det);
+      const Mi=[[M[1][1]/det,-M[0][1]/det],[-M[1][0]/det,M[0][0]/det]];
+      const U=[0,1].map(i=>Array.from({length:p},(_,j)=>L[0][i]*a.ZtX[0][j]+L[1][i]*a.ZtX[1][j]));
+      const u=[0,1].map(i=>L[0][i]*a.Zty[0]+L[1][i]*a.Zty[1]);
+      const MiU=[0,1].map(i=>Array.from({length:p},(_,j)=>Mi[i][0]*U[0][j]+Mi[i][1]*U[1][j])), Miu=[0,1].map(i=>Mi[i][0]*u[0]+Mi[i][1]*u[1]);
+      for(let i=0;i<p;i++){ b[i]+=a.Xty[i]-(U[0][i]*Miu[0]+U[1][i]*Miu[1]); for(let j=0;j<p;j++) A[i][j]+=a.XtX[i][j]-(U[0][i]*MiU[0][j]+U[1][i]*MiU[1][j]); }
+      yy+=a.yty-(u[0]*Miu[0]+u[1]*Miu[1]);
+    }
+    const Ai=invert(A); if(!Ai) return null; const beta=Ai.map(r=>r.reduce((s,v,j)=>s+v*b[j],0));
+    const q=yy-beta.reduce((s,v,i)=>s+v*b[i],0); if(!(q>0)) return null; const s2=q/N;
+    return {m2ll:N*Math.log(2*Math.PI*s2)+ld+N,beta,s2,Ai}; };
+  const obj=th=>{ const r=evalT(th); return r?r.m2ll:1e300; };
+  let best=null; for(const st of [[1,0,0.3],[0.3,0,0.1],[3,0,1],[1,0.5,0.5]]){ const r=nelderMead(obj,st,0.4); if(!best||r.f<best.f) best=r; }
+  const r2=nelderMead(obj,best.x,0.1); if(r2.f<best.f) best=r2;
+  const out=evalT(best.x); out.theta=best.x; out.N=N; return out;
+}
+function lmmCompare(groupObs,pairIdx){ // groupObs: per group array of animals' [{x,y}]
+  const all=groupObs.flat().flat(); if(all.length<6) return null;
+  const xs=all.map(o=>o.x), tm=mean(xs), ts=sdv(xs)||1;
+  const mk=(gIdx)=>{ const an=[]; gIdx.forEach((gi,k)=>groupObs[gi].forEach(obs=>{ if(obs.length) an.push({g:k,obs:obs.map(o=>({t:(o.x-tm)/ts,y:o.y}))}); })); return an; };
+  const fitSet=gIdx=>{ const K=gIdx.length, an=mk(gIdx); if(an.length<3||K<2) return null;
+    const dum=g=>Array.from({length:K-1},(_,i)=>g===i+1?1:0);
+    const full=lmmFit(an,(g,t)=>[1,...dum(g),t,...dum(g).map(d=>d*t)]);
+    const noInt=lmmFit(an,(g,t)=>[1,...dum(g),t]);
+    const nul=lmmFit(an,(g,t)=>[1,t]);
+    const lrI=Math.max(0,noInt.m2ll-full.m2ll), lrG=Math.max(0,nul.m2ll-full.m2ll);
+    // slopes per group (per day) with SE
+    const p=full.beta.length, iT=K, slopes=Array.from({length:K},(_,g)=>{ const c=Array(p).fill(0); c[iT]=1; if(g>0) c[iT+g]=1;
+      const est=c.reduce((s,v,i)=>s+v*full.beta[i],0), v=full.s2*c.reduce((s,ci,i)=>s+ci*c.reduce((t,cj,j)=>t+cj*full.Ai[i][j],0),0); return {est:est/ts,se:Math.sqrt(v)/ts}; });
+    return {inter:{chi:lrI,df:K-1,p:chiP(lrI,K-1)}, group:{chi:lrG,df:2*(K-1),p:chiP(lrG,2*(K-1))}, slopes, nAnim:an.length, nObs:full.N,
+      sdInt:Math.sqrt(full.s2)*Math.abs(full.theta[0]), sdRes:Math.sqrt(full.s2)}; };
+  const K=groupObs.length, overall=fitSet(groupObs.map((_,i)=>i));
+  const pr=pairIdx.map(([a,b])=>fitSet([a,b]));
+  return {overall,pairs:pr,pI:holm(pr.map(x=>x?x.inter.p:NaN)),pG:holm(pr.map(x=>x?x.group.p:NaN)),K};
+}
+/* ----- two-way mixed (split-plot) RM ANOVA with Greenhouse-Geisser ----- */
+function rmAnova(groups){ // groups: array of arrays of rows (length p)
+  const G=groups.filter(g=>g.length>=1); if(G.length<2||G.some(g=>g.length<2)) return null;
+  const p=G[0][0].length, rows=G.flat(), N=rows.length, k=G.length; if(p<2||N-k<1) return null;
+  const gm=mean(rows.flat()); const sub=rows.map(r=>mean(r)); const tm=Array.from({length:p},(_,j)=>mean(rows.map(r=>r[j])));
+  const SSsubj=p*sub.reduce((s,v)=>s+(v-gm)**2,0);
+  const SSg=p*G.reduce((s,g)=>s+g.length*(mean(g.flat())-gm)**2,0);
+  const SSt=N*tm.reduce((s,v)=>s+(v-gm)**2,0);
+  const SScell=G.reduce((s,g)=>s+Array.from({length:p},(_,j)=>g.length*(mean(g.map(r=>r[j]))-gm)**2).reduce((a,b)=>a+b,0),0);
+  const SSgt=SScell-SSg-SSt, SStot=rows.flat().reduce((s,v)=>s+(v-gm)**2,0);
+  const SSerr=SStot-SSsubj-SSt-SSgt, SSsg=SSsubj-SSg;
+  const dfg=k-1, dfsg=N-k, dft=p-1, dfgt=(k-1)*(p-1), dfe=(N-k)*(p-1);
+  // GG epsilon from pooled within-group covariance
+  const S=Array.from({length:p},()=>Array(p).fill(0));
+  G.forEach(g=>{ const mu=Array.from({length:p},(_,j)=>mean(g.map(r=>r[j]))); g.forEach(r=>{ for(let i=0;i<p;i++) for(let j=0;j<p;j++) S[i][j]+=(r[i]-mu[i])*(r[j]-mu[j])/(N-k); }); });
+  const rm=S.map(r=>mean(r)), cm=Array.from({length:p},(_,j)=>mean(S.map(r=>r[j]))), am=mean(S.flat());
+  const Sc=S.map((r,i)=>r.map((v,j)=>v-rm[i]-cm[j]+am));
+  let tr=0,tr2=0; for(let i=0;i<p;i++){ tr+=Sc[i][i]; for(let j=0;j<p;j++) tr2+=Sc[i][j]*Sc[j][i]; }
+  const eps=tr2>0?Math.min(1,Math.max(1/(p-1),tr*tr/((p-1)*tr2))):1;
+  const Fg=(SSg/dfg)/(SSsg/dfsg), Ft=(SSt/dft)/(SSerr/dfe), Fgt=(SSgt/dfgt)/(SSerr/dfe);
+  return {eps,N,p,k,group:{F:Fg,df1:dfg,df2:dfsg,p:fP(Fg,dfg,dfsg)},time:{F:Ft,df1:dft,df2:dfe,p:fP(Ft,dft,dfe),pGG:fP(Ft,dft*eps,dfe*eps)},inter:{F:Fgt,df1:dfgt,df2:dfe,p:fP(Fgt,dfgt,dfe),pGG:fP(Fgt,dfgt*eps,dfe*eps)}};
+}
+/* ----- Kaplan-Meier & log-rank ----- */
+function kmCurve(a,start){ const ts=uniq(a.filter(o=>o.e).map(o=>o.t)).sort((x,y)=>x-y); let S=1; const pts=[{x:start,y:1}];
+  ts.forEach(t=>{ const n=a.filter(o=>o.t>=t-1e-12).length, d=a.filter(o=>o.e&&Math.abs(o.t-t)<1e-12).length; if(n>0){ pts.push({x:t,y:S}); S*=1-d/n; pts.push({x:t,y:S}); } });
+  const last=a.length?Math.max(...a.map(o=>o.t)):start; pts.push({x:last,y:S}); return pts; }
+function kmMedian(a){ const ts=uniq(a.filter(o=>o.e).map(o=>o.t)).sort((x,y)=>x-y); let S=1;
+  for(const t of ts){ const n=a.filter(o=>o.t>=t-1e-12).length, d=a.filter(o=>o.e&&Math.abs(o.t-t)<1e-12).length; S*=1-d/n; if(S<=0.5+1e-12) return t; } return NaN; }
+function logrank(groups){ const k=groups.length; if(k<2||groups.some(g=>!g.length)) return {p:NaN};
+  const times=uniq(groups.flat().filter(o=>o.e).map(o=>o.t)).sort((a,b)=>a-b); if(!times.length) return {p:NaN,chi:NaN};
+  const O=Array(k).fill(0),E=Array(k).fill(0),V=Array.from({length:k},()=>Array(k).fill(0));
+  times.forEach(t=>{ const n=groups.map(a=>a.filter(o=>o.t>=t-1e-12).length), d=groups.map(a=>a.filter(o=>o.e&&Math.abs(o.t-t)<1e-12).length);
+    const Nn=n.reduce((a,b)=>a+b,0), D=d.reduce((a,b)=>a+b,0); if(Nn<1) return;
+    for(let g=0;g<k;g++){ O[g]+=d[g]; E[g]+=D*n[g]/Nn; if(Nn>1) for(let h=0;h<k;h++) V[g][h]+=D*(Nn-D)/(Nn-1)*(n[g]/Nn)*((g===h?1:0)-n[h]/Nn); } });
+  const u=O.map((o,i)=>o-E[i]).slice(0,k-1), Vi=invert(V.slice(0,k-1).map(r=>r.slice(0,k-1))); if(!Vi) return {p:NaN,O,E};
+  const chi=u.reduce((s,ui,i)=>s+ui*u.reduce((t,uj,j)=>t+Vi[i][j]*uj,0),0); return {chi,df:k-1,p:chiP(chi,k-1),O,E}; }
+
 /* ================= analysis ================= */
 function analyze(quiet){
   const recs=records(); if(!recs.length) return null;
   const mode=$('xMode').value; if(!mode) return null;
   const metric=$('metric').value, logT=$('logT').checked, test=$('test').value;
-  const groups=uniq(recs.map(r=>r.g));
+  const groups=orderedGroups(recs);
   const miceMap=new Map();
   recs.forEach(r=>{ if(!miceMap.has(r.key)) miceMap.set(r.key,{key:r.key,s:r.s,g:r.g,raw:[],swapped:0,bad:0,filled:0,txStart:r.txStart,injStart:r.injStart,firstDate:r.firstDate});
     const m=miceMap.get(r.key); if(r.swapped) m.swapped++; if(r.filled) m.filled++;
@@ -538,13 +702,18 @@ function analyze(quiet){
   const xs=mice.flatMap(m=>m.pts.map(p=>p.x)); const xmin=Math.min(...xs), xmax=Math.max(...xs);
   let start=num($('winFrom').value), end=num($('winTo').value);
   if(isNaN(start)) start=(mode==='tx'&&xmin<0)?0:xmin; if(isNaN(end)) end=xmax;
-  const met=(V,V0)=>metric==='abs'?V:(!(V0>0)?NaN:(metric==='rel'?V/V0:(V/V0-1)*100));
-  const tr=(V,V0)=>{ if(!logT) return met(V,V0); return metric==='abs'?Math.log(V+1):Math.log((V+1)/(V0+1)); };
+  let ctrlAt=()=>NaN;
+  const met=(V,V0,x)=>{ if(metric==='abs') return V; if(metric==='delta') return isFinite(V0)?V-V0:NaN; if(metric==='tc'){ const c=ctrlAt(x); return c>0?V/c*100:NaN; }
+    if(!(V0>0)) return NaN; if(metric==='rel') return V/V0; if(metric==='pct') return (V/V0-1)*100; return Math.log2((V+1)/(V0+1)); };
+  const tr=(V,V0,x)=>{ if(!logT) return met(V,V0,x); if(metric==='abs'||metric==='tc') return Math.log(V+1); return isFinite(V0)?Math.log((V+1)/(V0+1)):NaN; };
+  const baseRef=$('baseRef').value, baseDay=num($('baseDay').value);
   const vAt=(m,x)=>{ const p=m.pts; if(!p.length||x<p[0].x-1e-9||x>p[p.length-1].x+1e-9) return NaN;
     for(let i=0;i<p.length;i++){ if(Math.abs(p[i].x-x)<1e-9) return p[i].V; if(p[i].x>x){ const a=p[i-1],b=p[i],t=(x-a.x)/(b.x-a.x); return Math.exp(Math.log(a.V+1)+t*(Math.log(b.V+1)-Math.log(a.V+1)))-1; } } return NaN; };
   mice.forEach(m=>{
     const before=m.pts.filter(p=>p.x<=start+1e-9); const inW=m.pts.filter(p=>p.x>=start-1e-9&&p.x<=end+1e-9);
-    const b=before.length?before[before.length-1]:inW[0];
+    let b=before.length?before[before.length-1]:inW[0];
+    if(baseRef==='first') b=m.pts[0];
+    else if(baseRef==='day'&&isFinite(baseDay)) b=m.pts.reduce((a,p)=>Math.abs(p.x-baseDay)<Math.abs(a.x-baseDay)-1e-9?p:a,m.pts[0]);
     m.V0=b?b.V:NaN; m.x0=b?b.x:NaN; m.wpts=inW;
     // growth rate: OLS of ln(V+1) on x
     if(inW.length>=2){ const X=inW.map(p=>p.x), Y=inW.map(p=>Math.log(p.V+1)), mx=mean(X), my=mean(Y);
@@ -557,14 +726,16 @@ function analyze(quiet){
   const align=$('align').value; let grid;
   if(align==='exact') grid=uniq(mice.flatMap(m=>m.wpts.map(p=>p.x))).sort((a,b)=>a-b);
   else { const st=Math.max(0.5,num($('step').value)||3); grid=[]; for(let x=start;x<=end+1e-9;x+=st) grid.push(Math.round(x*1000)/1000); if(grid.length&&grid[grid.length-1]<end-1e-6) grid.push(end); }
+  const ctrlG=$('ctrl').value, ctrlMice=mice.filter(m=>m.g===ctrlG);
+  ctrlAt=x=>{ const v=ctrlMice.map(m=>vAt(m,x)).filter(isFinite); return v.length?mean(v):NaN; };
   mice.forEach(m=>{ m.vals=grid.map(x=>align==='exact'?(m.wpts.find(p=>Math.abs(p.x-x)<1e-9)?.V??NaN):vAt(m,x));
-    m.met=m.vals.map(V=>isNaN(V)?NaN:met(V,m.V0)); m.tv=m.vals.map(V=>isNaN(V)?NaN:tr(V,m.V0)); m.lv=m.vals.map(V=>isNaN(V)?NaN:Math.log(V+1)); });
+    m.met=m.vals.map((V,j)=>isNaN(V)?NaN:met(V,m.V0,grid[j])); m.tv=m.vals.map((V,j)=>isNaN(V)?NaN:tr(V,m.V0,grid[j])); m.lv=m.vals.map(V=>isNaN(V)?NaN:Math.log(V+1)); });
   if(quiet) return {grid,groups,mice};
   // AUC up to last common day
   const lasts=mice.filter(m=>m.wpts.length>=2).map(m=>m.wpts[m.wpts.length-1].x); const T=lasts.length?Math.min(...lasts):NaN;
   mice.forEach(m=>{ m.auc=NaN; if(!(T>start)||m.wpts.length<2) return;
     const xsA=uniq([start,...m.pts.map(p=>p.x).filter(x=>x>start&&x<T),T]).sort((a,b)=>a-b);
-    const pts=xsA.map(x=>({x,y:met(vAt(m,x),m.V0)})).filter(p=>!isNaN(p.y)); if(pts.length<2) return;
+    const pts=xsA.map(x=>({x,y:met(vAt(m,x),m.V0,x)})).filter(p=>!isNaN(p.y)); if(pts.length<2) return;
     let a=0; for(let i=1;i<pts.length;i++) a+=(pts[i].x-pts[i-1].x)*(pts[i].y+pts[i-1].y)/2; m.auc=a; });
   const gMice=g=>mice.filter(m=>m.g===g);
   const presentGroups=groups.filter(g=>gMice(g).length);
@@ -637,7 +808,29 @@ function analyze(quiet){
     return {g,n:v.length,mean:v.length?mean(v):NaN,sd:sdv(v),cv:sdv(v)/mean(v)*100,min:Math.min(...v),max:Math.max(...v),vals:v,tx,inj,fd}; });
   const bt=base.map(b=>b.vals.map(v=>Math.log(v+1)));
   const baseP=(()=>{ const ok=bt.filter(a=>a.length>=2); if(ok.length<2) return NaN; if(test==='nonpar') return ok.length===2?mannWhitney(ok[0],ok[1]).p:kruskal(ok).p; return ok.length===2?welchT(ok[0],ok[1]).p:welchAnova(ok).p; })();
-  return {mode,metric,logT,test,groups:presentGroups,allMice,mice,grid,start,end,T,days,pairs,perm,overallPerm,sums,base,baseP,align,nperm,xmin,xmax};
+  // ----- A2 linear mixed model
+  const lmmY=m=>m.wpts.map(p=>({x:p.x,y:tr(p.V,m.V0,p.x)})).filter(o=>isFinite(o.y));
+  const lmm=lmmCompare(presentGroups.map(g=>gMice(g).map(lmmY)), pairs.map(([a,b])=>[presentGroups.indexOf(a),presentGroups.indexOf(b)]));
+  // ----- A3 RM ANOVA on complete cases (grid days up to last common day)
+  const cols=grid.map((x,j)=>j).filter(j=>grid[j]<=T+1e-9);
+  const rmRows=presentGroups.map(g=>gMice(g).map(m=>cols.map(j=>m.tv[j])).filter(r=>r.every(isFinite)));
+  const rmDrop=mice.length-rmRows.reduce((a,b)=>a+b.length,0);
+  const rm=cols.length>=2?rmAnova(rmRows):null;
+  const rmPairs=pairs.map(([a,b])=>{ const x=rmAnova([rmRows[presentGroups.indexOf(a)],rmRows[presentGroups.indexOf(b)]]); return x; });
+  const rmAdj={g:holm(rmPairs.map(x=>x?x.group.p:NaN)),i:holm(rmPairs.map(x=>x?x.inter.pGG:NaN))};
+  // ----- A4 time to endpoint
+  const kmType=$('kmType').value, kmThr=num($('kmThr').value);
+  const ev=m=>{ const thr=kmType==='fold'?m.V0*kmThr:kmThr; const p=m.pts.filter(q=>q.x>=start-1e-9&&q.x<=end+1e-9); if(!p.length||!(thr>0)) return null;
+    if(p[0].V>=thr) return {t:p[0].x,e:1};
+    for(let i=1;i<p.length;i++) if(p[i].V>=thr){ const a=Math.log(p[i-1].V+1),b=Math.log(p[i].V+1),c=Math.log(thr+1); return {t:p[i-1].x+(b>a?(c-a)/(b-a):1)*(p[i].x-p[i-1].x),e:1}; }
+    return {t:p[p.length-1].x,e:0}; };
+  const kmData=presentGroups.map(g=>gMice(g).map(ev).filter(Boolean));
+  const km={groups:kmData.map((a,i)=>({g:presentGroups[i],n:a.length,events:a.filter(o=>o.e).length,curve:kmCurve(a,start),median:kmMedian(a)})),
+    overall:presentGroups.length>2?logrank(kmData):null, pairs:pairs.map(([a,b])=>logrank([kmData[presentGroups.indexOf(a)],kmData[presentGroups.indexOf(b)]]))};
+  km.pAdj=holm(km.pairs.map(x=>x.p));
+  // ----- TGI at last common day
+  const tgi=isFinite(T)?presentGroups.map(g=>{ const ms=gMice(g); const VT=ms.map(m=>vAt(m,T)).filter(isFinite), V0=ms.map(m=>m.V0).filter(isFinite); return {g,VT:VT.length?mean(VT):NaN,V0:V0.length?mean(V0):NaN,n:VT.length}; }):[];
+  return {mode,metric,logT,test,groups:presentGroups,allMice,mice,grid,start,end,T,days,pairs,perm,overallPerm,sums,base,baseP,align,nperm,xmin,xmax,lmm,rm,rmPairs,rmAdj,rmDrop,rmCols:cols.length,km,kmType,kmThr,tgi,ctrlG,baseRef};
 }
 
 /* ================= rendering ================= */
@@ -653,7 +846,8 @@ const colorFor=(g,i)=>colorMap[g]||(colorMap[g]=PRESETS[curPreset][i%PRESETS[cur
 const rgba=(hex,a)=>{ const n=parseInt(hex.slice(1),16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; };
 $('presetRow').innerHTML=Object.entries(PRESETS).map(([n,c])=>`<button class="preset" data-p="${esc(n)}">${c.slice(0,5).map(x=>`<i style="background:${x}"></i>`).join('')} ${esc(n)}</button>`).join('');
 const xLabel=m=>({tx:'Days from treatment start',inj:'Days from tumor injection',study:'Days since study start',first:'Days since first measurement'}[m]);
-const yLabel=m=>({abs:'Tumor volume (mm³)',rel:'Relative tumor volume (V / V₀)',pct:'Change from baseline (%)'}[m]);
+const yLabel=m=>({abs:'Tumor volume (mm³)',rel:'Relative tumor volume (V / V₀)',pct:'Change from baseline (%)',delta:'Volume increase V − V₀ (mm³)',log2:'log2 fold change vs V₀',tc:'% of control mean (T/C %)'}[m]);
+const baseRefText=()=>({window:'the last measurement on or before the window start',first:"each animal's first measurement",day:'the measurement closest to day '+$('baseDay').value}[$('baseRef').value]);
 const testName=(t,k)=>t==='nonpar'?(k>2?'Kruskal-Wallis':'Mann-Whitney U'):t==='ancova'?'ANCOVA (ln volume adjusted for ln baseline)':(k>2?'Welch ANOVA':'Welch t-test');
 const pairTestName=t=>t==='nonpar'?'Mann-Whitney U':t==='ancova'?'pairwise ANCOVA':'Welch t-test';
 
@@ -661,7 +855,7 @@ function compute(){
   R=analyze(false);
   if(!R){ ['permTable','sumTable','dayTable','qcTable','baseTable'].forEach(id=>$(id).innerHTML='<tr><td>No usable data. Check the column selections.</td></tr>'); drawCharts(); return; }
   $('xModeSub').textContent=R.mode==='tx'?'Each animal\'s own treatment day 0 is aligned.':R.mode==='inj'?'Each animal\'s own injection day 0 is aligned.':R.mode==='study'?'Day 0 = earliest date in the table (same calendar day for all animals).':'Day 0 = each animal\'s first measurement.';
-  $('stepBox').style.display=R.align==='interp'?'':'none';
+  $('stepBox').style.display=R.align==='interp'?'':'none'; $('baseDayBox').style.display=$('baseRef').value==='day'?'':'none';
   renderBase(); renderQC(); renderStats(); renderMethods(); drawCharts();
 }
 function renderBase(){
@@ -682,11 +876,12 @@ function renderBase(){
   const imbalanced=(r.baseP<0.05)||ratio>1.25;
   if(imbalanced) notes.push(`<div class="note warn"><b>Baseline volumes differ between groups</b> (largest/smallest group mean = ${f(ratio,2)}×; p = ${fp(r.baseP)}).<br><b>Resolution:</b> (1) choose <b>Statistical test → ANCOVA</b> to adjust each day's comparison for baseline volume (preferred), and/or (2) use <b>Y variable → Relative tumor volume</b> so each animal is normalized to its own V₀; (3) the <b>growth-rate</b> comparison in section 6B does not depend on baseline size.</div>`);
   else notes.push(`<div class="note ok"><b>Baseline volumes are balanced</b> (largest/smallest group mean = ${f(ratio,2)}×; p = ${fp(r.baseP)}, ${testName(r.test==='ancova'?'param':r.test,r.groups.length)} on ln(V₀+1)). Absolute volumes can be compared directly.</div>`);
+  if(r.metric==='tc'&&!r.groups.includes(r.ctrlG)) notes.push('<div class="note warn">"% of control" needs a control group: choose one under "Control group".</div>');
   $('baseNotes').innerHTML=notes.join('');
   const sd=r.mode==='tx'?'Treatment start date(s)':r.mode==='inj'?'Injection date(s)':'First measurement date(s)';
   let h=`<tr><th>Group</th><th class="n">n</th><th class="n">Baseline V₀ mean (mm³)</th><th class="n">SD</th><th class="n">CV %</th><th class="n">Range</th><th>${sd}</th></tr>`;
   r.base.forEach(b=>{ const ds=r.mode==='tx'?b.tx:r.mode==='inj'?b.inj:b.fd; h+=`<tr><td>${esc(b.g)}</td><td class="n">${b.n}</td><td class="n">${fv(b.mean)}</td><td class="n">${fv(b.sd)}</td><td class="n">${f(b.cv,0)}</td><td class="n">${fv(b.min)} – ${fv(b.max)}</td><td>${ds.length?ds.map(fmtDate).join(', '):'—'}</td></tr>`; });
-  h+=`<tr><td colspan="7" class="muted">Baseline = last measurement on or before day ${f(R.start,1)} (window start); if none, the first measurement in the window.</td></tr>`;
+  h+=`<tr><td colspan="7" class="muted">Baseline V₀ = ${baseRefText()}${$('baseRef').value==='window'?' (day '+f(R.start,1)+'; if none, the first measurement in the window)':''}.</td></tr>`;
   $('baseTable').innerHTML=h;
 }
 function renderQC(){
@@ -709,6 +904,40 @@ function renderStats(){
   r.perm.forEach(x=>{ h+=`<tr><td>${esc(x.ga)} vs ${esc(x.gb)}</td><td class="n">${x.na} vs ${x.nb}</td><td class="n">${x.c}</td><td class="n">${f(x.stat,2)}</td><td class="n">${x.used?x.used.toLocaleString()+(x.exact?' (exact)':''):'—'}</td><td class="n">${fp(x.p)}</td><td class="n"><b>${fp(x.pAdj)}</b></td><td class="sig">${stars(x.pAdj)}</td></tr>`; });
   if(!r.perm.length) h+='<tr><td colspan="8">Need at least 2 groups.</td></tr>';
   $('permTable').innerHTML=h;
+  // A2 LMM
+  const L=r.lmm, scale=r.logT?(r.metric==='abs'||r.metric==='tc'?'ln(V+1)':'ln((V+1)/(V₀+1))'):yLabel(r.metric);
+  $('lmmNote').innerHTML=`Response: ${scale} at every measured time point (no interpolation; animals that leave early keep their data). Fixed effects: group, time, group × time. Random effects: intercept and slope for each animal. Fitted by maximum likelihood; p-values from likelihood-ratio tests (χ²). <b>Group × time</b> tests whether the groups grow at different rates; <b>group (overall)</b> tests any difference in level or rate. Pairwise p-values are Holm-adjusted.${r.logT?'':' <b>Tip:</b> turn on log-transform: tumor growth is approximately exponential, so the model fits best on the log scale.'}`;
+  if(!L||!L.overall){ $('lmmTable').innerHTML='<tr><td>Not enough data for the mixed model.</td></tr>'; $('lmmEst').innerHTML=''; }
+  else { let t='<tr><th>Comparison</th><th>Effect tested</th><th class="n">χ² (df)</th><th class="n">p</th><th class="n">p (Holm)</th><th></th></tr>';
+    if(k>2){ t+=`<tr><td><b>Overall</b></td><td>Group × time</td><td class="n">${f(L.overall.inter.chi,2)} (${L.overall.inter.df})</td><td class="n"><b>${fp(L.overall.inter.p)}</b></td><td class="n">—</td><td class="sig">${stars(L.overall.inter.p)}</td></tr>`;
+      t+=`<tr><td><b>Overall</b></td><td>Group (level or rate)</td><td class="n">${f(L.overall.group.chi,2)} (${L.overall.group.df})</td><td class="n"><b>${fp(L.overall.group.p)}</b></td><td class="n">—</td><td class="sig">${stars(L.overall.group.p)}</td></tr>`; }
+    r.pairs.forEach(([a,b],i)=>{ const x=L.pairs[i]; if(!x){ t+=`<tr><td>${esc(a)} vs ${esc(b)}</td><td colspan="5">not enough data</td></tr>`; return; }
+      t+=`<tr><td>${esc(a)} vs ${esc(b)}</td><td>Group × time</td><td class="n">${f(x.inter.chi,2)} (${x.inter.df})</td><td class="n">${fp(x.inter.p)}</td><td class="n"><b>${fp(L.pI[i])}</b></td><td class="sig">${stars(L.pI[i])}</td></tr>`;
+      t+=`<tr><td>${esc(a)} vs ${esc(b)}</td><td>Group (level or rate)</td><td class="n">${f(x.group.chi,2)} (${x.group.df})</td><td class="n">${fp(x.group.p)}</td><td class="n"><b>${fp(L.pG[i])}</b></td><td class="sig">${stars(L.pG[i])}</td></tr>`; });
+    $('lmmTable').innerHTML=t;
+    $('lmmEst').innerHTML=`<tr><th>Group</th><th class="n">Model slope / day ± SE</th>${r.logT?'<th class="n">Doubling time (d)</th>':''}</tr>`+r.groups.map((g,i)=>{ const sl=L.overall.slopes[i]; return `<tr><td>${esc(g)}</td><td class="n">${f(sl.est,4)} ± ${f(sl.se,4)}</td>${r.logT?`<td class="n">${sl.est>0?f(Math.LN2/sl.est,1):'—'}</td>`:''}</tr>`; }).join('')+`<tr><td colspan="3" class="muted">${L.overall.nAnim} animals, ${L.overall.nObs} measurements. Small groups: likelihood-ratio p-values can be slightly optimistic; confirm with A1.</td></tr>`; }
+  // A3 RM ANOVA
+  const RM=r.rm;
+  $('rmNote').innerHTML=`Mixed-design (split-plot) ANOVA on ${r.logT?'log-transformed values':yLabel(r.metric).toLowerCase()} at ${r.rmCols} time points (days ${f(r.start,1)}–${f(r.T,1)}, up to the last day on which every animal is still measured). Requires every animal to have a value at every one of these days${r.rmDrop?`: <b>${r.rmDrop} animal(s) with missing values were left out</b>${r.align==='exact'?' (try "Interpolate to a common day grid")':''}`:''}. Sphericity is corrected with Greenhouse-Geisser (ε). This is what GraphPad Prism calls "two-way repeated measures ANOVA"; the mixed model (A2) is preferred when data are missing.`;
+  if(!RM){ $('rmTable').innerHTML='<tr><td>Not enough complete data (needs ≥2 animals per group with values at ≥2 common days).</td></tr>'; }
+  else { let t=`<tr><th>Comparison</th><th>Effect</th><th class="n">F (df)</th><th class="n">p</th><th class="n">p (GG-corrected)</th><th class="n">p (Holm)</th><th></th></tr>`;
+    const row=(c,e,x,useGG,adj)=>`<tr><td>${c}</td><td>${e}</td><td class="n">${f(x.F,2)} (${x.df1}, ${x.df2})</td><td class="n">${fp(x.p)}</td><td class="n">${useGG?fp(x.pGG):'—'}</td><td class="n">${adj===undefined?'—':'<b>'+fp(adj)+'</b>'}</td><td class="sig">${stars(adj===undefined?(useGG?x.pGG:x.p):adj)}</td></tr>`;
+    t+=row('<b>All groups</b>','Group',RM.group,false)+row('<b>All groups</b>','Time',RM.time,true)+row('<b>All groups</b>','Group × time',RM.inter,true);
+    if(k>2) r.pairs.forEach(([a,b],i)=>{ const x=r.rmPairs[i]; if(!x) return; t+=row(`${esc(a)} vs ${esc(b)}`,'Group',x.group,false,r.rmAdj.g[i])+row(`${esc(a)} vs ${esc(b)}`,'Group × time',x.inter,true,r.rmAdj.i[i]); });
+    t+=`<tr><td colspan="7" class="muted">Greenhouse-Geisser ε = ${f(RM.eps,3)}; ${RM.N} animals × ${RM.p} time points.</td></tr>`; $('rmTable').innerHTML=t; }
+  // A4 KM / log-rank
+  const K4=r.km;
+  $('kmNote').innerHTML=`Event = the first day the tumor reaches ${r.kmType==='fold'?r.kmThr+' × its baseline V₀ (baseline-independent; e.g. 2 = doubling time, 4 = quadrupling time)':r.kmThr+' mm³'}, estimated by log-linear interpolation between measurements. Animals that never reach it are censored at their last measurement. Groups are compared with the log-rank test; pairwise p-values are Holm-adjusted.`;
+  let kt='<tr><th>Group</th><th class="n">n</th><th class="n">Reached endpoint</th><th class="n">Median time (days)</th></tr>'+K4.groups.map(x=>`<tr><td>${esc(x.g)}</td><td class="n">${x.n}</td><td class="n">${x.events}</td><td class="n">${isFinite(x.median)?f(x.median,1):'not reached'}</td></tr>`).join('');
+  kt+='<tr><th>Comparison</th><th class="n">χ²</th><th class="n">p</th><th class="n">p (Holm)</th></tr>';
+  if(K4.overall) kt+=`<tr><td><b>Overall</b></td><td class="n">${f(K4.overall.chi,2)}</td><td class="n"><b>${fp(K4.overall.p)}</b> <span class="sig">${stars(K4.overall.p)}</span></td><td class="n">—</td></tr>`;
+  r.pairs.forEach(([a,b],i)=>{ const x=K4.pairs[i]; kt+=`<tr><td>${esc(a)} vs ${esc(b)}</td><td class="n">${f(x.chi,2)}</td><td class="n">${fp(x.p)}</td><td class="n"><b>${fp(K4.pAdj[i])}</b> <span class="sig">${stars(K4.pAdj[i])}</span></td></tr>`; });
+  $('kmTable').innerHTML=kt;
+  // TGI
+  const ctl=r.tgi.find(x=>x.g===r.ctrlG);
+  if(!ctl||!isFinite(r.T)) $('tgiTable').innerHTML='<tr><td class="muted">Tumor growth inhibition needs a control group (choose it under "Control group").</td></tr>';
+  else $('tgiTable').innerHTML=`<tr><th>Group (vs ${esc(ctl.g)}) at day ${f(r.T,1)}</th><th class="n">Mean V (mm³)</th><th class="n">T/C %</th><th class="n">TGI %</th></tr>`+r.tgi.map(x=>{ const tc=x.VT/ctl.VT*100, tgi=(1-(x.VT-x.V0)/(ctl.VT-ctl.V0))*100;
+      return `<tr><td>${esc(x.g)}</td><td class="n">${fv(x.VT)}</td><td class="n">${x.g===ctl.g?'100':f(tc,1)}</td><td class="n">${x.g===ctl.g?'—':f(tgi,1)}</td></tr>`; }).join('')+`<tr><td colspan="4" class="muted">T/C % = mean V(treated) / mean V(control) × 100. TGI % = (1 − ΔT/ΔC) × 100, Δ = mean V at day ${f(r.T,1)} − mean V₀. Day ${f(r.T,1)} is the last day on which all animals are measured. The p-value for this day is in table C.</td></tr>`;
   // B summaries
   const sumT=r.test==='ancova'?'param':r.test;
   let s='<tr><th>Group</th><th class="n">n</th><th class="n">Growth rate (/day) mean ± SEM</th><th class="n">Doubling time (d) median</th><th class="n">AUC mean ± SEM</th></tr>';
@@ -732,8 +961,9 @@ function renderMethods(){
   const parts=[];
   parts.push(`Tumor volume was calculated as ${$('formula').value==='pi6'?'V = π/6 × L × W²':'V = L × W² / 2'}, where L and W are the longest and shortest perpendicular diameters.`);
   parts.push(`Animals were aligned by ${xLabel(r.mode).toLowerCase()}${r.align==='interp'?`, and each animal's measurements were interpolated (log-linear, without extrapolation) onto a common grid every ${$('step').value} days`:''}; the analysis covered days ${f(r.start,1)}–${f(r.end,1)}.`);
-  if(r.metric!=='abs') parts.push(`Volumes were expressed as ${r.metric==='rel'?'relative tumor volume (V/V₀)':'percentage change from baseline'}, where V₀ is each animal's volume at the start of the window.`);
+  if(r.metric!=='abs') parts.push(`Volumes were expressed as ${({rel:'relative tumor volume (V/V₀)',pct:'percentage change from baseline',delta:'volume increase from baseline (V − V₀)',log2:'log2 fold change from baseline',tc:'percentage of the control-group mean on the same day (T/C %)'})[r.metric]}${r.metric!=='tc'?`, where V₀ is ${baseRefText()}`:''}.`);
   parts.push(`Growth curves were compared using a permutation test (Elso et al., 2004; ${r.nperm.toLocaleString()} permutations) of the time-averaged Welch t-statistic${r.logT?' on log-transformed volumes':''}${k>2?', with an overall test based on the time-averaged ANOVA F-statistic':''}; pairwise p-values were adjusted with Holm's method.`);
+  parts.push(`Growth trajectories were additionally analyzed with a linear mixed-effects model of ${r.logT?'log-transformed volume':'volume'} with fixed effects for group, time and their interaction and a random intercept and slope for each animal (maximum likelihood; likelihood-ratio tests)${r.rm?', and with two-way repeated-measures ANOVA with Greenhouse-Geisser correction on animals with complete data':''}. Time to reach ${r.kmType==='fold'?r.kmThr+'× baseline volume':r.kmThr+' mm³'} was estimated by the Kaplan-Meier method and compared with the log-rank test.`);
   parts.push(`Specific growth rates (slope of ln(V+1) vs. time) and areas under the curve (to day ${f(r.T,1)}) were calculated for each animal and compared with ${r.test==='nonpar'?(k>2?'Kruskal-Wallis and pairwise Mann-Whitney U tests':'the Mann-Whitney U test'):(k>2?"Welch's ANOVA and pairwise Welch's t-tests":"Welch's t-test")}.`);
   parts.push(`Differences on each day were assessed with ${r.test==='ancova'?'ANCOVA on ln(V+1) with ln(baseline+1) as covariate':tN+(r.logT&&r.test!=='nonpar'?' on log-transformed values':'')}${k>2&&r.test!=='ancova'?' followed by pairwise '+pairTestName(r.test)+'s':''}${$('adj').value==='none'?'':', with Holm correction '+($('adj').value==='day'?'within each day':'across all days and comparisons')}. P &lt; 0.05 was considered significant.`);
   $('methText').innerHTML='<b>Suggested methods text (updates with your settings):</b><br>'+parts.join(' ');
@@ -742,7 +972,7 @@ function renderMethods(){
 /* ================= charts ================= */
 const whiteBg={id:'whiteBg',beforeDraw(c){ const x=c.ctx; x.save(); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height); x.restore(); }};
 function drawCharts(){
-  if(chart){chart.destroy();chart=null;} if(chart2){chart2.destroy();chart2=null;}
+  if(chart){chart.destroy();chart=null;} if(chart2){chart2.destroy();chart2=null;} if(chart3){chart3.destroy();chart3=null;}
   if(!R||typeof Chart==='undefined') return;
   const r=R, err=$('err').value, logY=$('logY').checked, minN=Math.max(1,num($('minN').value)||1);
   $('colorRow').innerHTML=r.groups.map((g,i)=>`<label class="sw"><input type="color" data-g="${esc(g)}" value="${colorFor(g,i)}">${esc(g)}</label>`).join('');
@@ -786,6 +1016,9 @@ function drawCharts(){
     ctx.restore(); }};
   let pS=''; if(key!=='dt'){ const S=r.sums[key]; pS=r.groups.length>2?`overall p = ${fp(S.ov)}`:(r.pairs.length?`p = ${fp(S.ppAdj[0])}`:''); }
   const allv=vals.flat(); const ymx=allv.length?Math.max(...allv,...means.map((m,i)=>m+(sems[i]||0)).filter(isFinite)):1;
+  if(r.km) chart3=new Chart($('chart3'),{type:'line',data:{datasets:r.km.groups.map((x,i)=>({label:x.g,data:x.curve,borderColor:colorFor(x.g,i),backgroundColor:colorFor(x.g,i),borderWidth:2,pointRadius:0,stepped:false}))},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{position:'top',labels:{boxWidth:14,boxHeight:3}},title:{display:true,text:'Fraction of tumors below endpoint',font:{size:13}}},
+      scales:{x:{type:'linear',min:r.start,max:r.end,title:{display:true,text:xLabel(r.mode)}},y:{min:0,max:1.02,title:{display:true,text:'Fraction not yet at endpoint'}}}},plugins:[whiteBg]});
   chart2=new Chart($('chart2'),{type:'bar',data:{labels:r.groups,datasets:[{data:means,backgroundColor:cols.map(c=>rgba(c,0.75)),borderColor:cols,borderWidth:1,maxBarThickness:60}]},
     options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},title:{display:true,text:lab+(pS?'  ('+pS+')':''),font:{size:13}},tooltip:{callbacks:{label:c=>`mean ${f(c.parsed.y,4)} ± ${f(sems[c.dataIndex],4)} SEM`}}},
       scales:{y:{beginAtZero:true,suggestedMax:ymx*1.08,grid:{color:'#eef0f3'}},x:{grid:{display:false}}}},plugins:[whiteBg,ov2]});
@@ -959,9 +1192,11 @@ function readFile(file){
     rd.readAsArrayBuffer(file);
   } else { rd.onload=ev=>{ $('paste').value=ev.target.result; load(parseText(ev.target.result)); }; rd.readAsText(file); }
 }
-['cSample','cGroup','cWid','cLen','cDate','cInj','cTx'].forEach(id=>$(id).onchange=()=>{ excludedMice=new Set(); setupModes(false); });
+['cSample','cGroup','cWid','cLen','cDate','cInj','cTx'].forEach(id=>$(id).onchange=()=>{ excludedMice=new Set(); renG={}; renS={}; renOrd={}; renderRename(); setupModes(false); });
 $('xMode').onchange=()=>{ $('winFrom').value=''; $('winTo').value=''; compute(); };
-['formula','metric','test','logT','cmp','ctrl','adj','align'].forEach(id=>$(id).onchange=compute);
+['formula','metric','test','logT','cmp','ctrl','adj','align','baseRef'].forEach(id=>$(id).onchange=compute);
+['baseDay','kmThr'].forEach(id=>$(id).onchange=compute);
+$('kmType').addEventListener('change',()=>{ $('kmThr').value=$('kmType').value==='fold'?4:1000; compute(); });
 ['winFrom','winTo','step','nperm'].forEach(id=>$(id).onchange=compute);
 ['err','showInd','showMean','showStars','logY','minN','sumSel'].forEach(id=>$(id).onchange=drawCharts);
 ['axXmin','axXmax','axXstep','axYmin','axYmax','axYstep','axXtitle','axYtitle'].forEach(id=>$(id).oninput=drawCharts);
@@ -969,7 +1204,7 @@ $('axReset').onclick=()=>{ ['axXmin','axXmax','axXstep','axYmin','axYmax','axYst
 $('colorRow').oninput=e=>{ const g=e.target.dataset.g; if(!g) return; colorMap[g]=e.target.value; drawCharts(); };
 $('presetRow').onclick=e=>{ const b=e.target.closest('.preset'); if(!b||!R) return; curPreset=b.dataset.p; const p=PRESETS[curPreset]; R.groups.forEach((g,i)=>colorMap[g]=p[i%p.length]); drawCharts(); };
 $('qcTable').onchange=e=>{ const k=e.target.dataset.k; if(!k) return; e.target.checked?excludedMice.delete(k):excludedMice.add(k); compute(); };
-window.__tg={analyze:()=>R,welchT,welchAnova,mannWhitney,kruskal,ancova,holm,anovaF};
+window.__tg={lmmFit,lmmCompare,rmAnova,logrank,kmMedian,analyze:()=>R,welchT,welchAnova,mannWhitney,kruskal,ancova,holm,anovaF};
 })();
 </script>
 </body>
