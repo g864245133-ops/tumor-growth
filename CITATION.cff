@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this tool in your work, please cite it as below."
+title: "Tumor Growth Analysis: a browser-based tool for tumor volume and growth-curve statistics"
+type: software
+authors:
+  - family-names: Gao
+    given-names: Xiaoyue
+    affiliation: "University of Wisconsin-Madison"
+    orcid: "https://orcid.org/0000-0002-5414-403X"
+version: 1.0.0
+date-released: 2026-11-17
+license: MIT
+url: "https://g864245133-ops.github.io/tumor-growth/"
+repository-code: "https://github.com/g864245133-ops/tumor-growth"
+keywords:
+  - tumor growth
+  - xenograft
+  - growth curve
+  - permutation test
+  - mixed-effects model
+  - survival analysis
