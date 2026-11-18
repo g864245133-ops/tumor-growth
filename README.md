@@ -11,6 +11,8 @@ A free, browser-based tool for analyzing caliper tumor measurements: volume calc
 | M1 | Vehicle | 4.10 | 5.62 | 2026-03-09 | 7 | 0 |
 | M1 | Vehicle | 4.58 | 6.20 | 2026-03-11 | 9 | 2 |
 
+After loading, groups and samples can be **renamed and reordered** in the "Rename / reorder groups and samples" panel (the original file is not changed; giving two groups the same name merges them).
+
 Sample, Group, Width and Length are required, plus at least one of Date / Day from injection / Day from treatment. Paste from Excel or upload `.xlsx / .csv / .txt`. Click **Load example data** on the page to see a worked example.
 
 ### Built-in data converter (lab-notebook layout)
@@ -54,12 +56,29 @@ white     ...
 - Time points where a group has fewer than 2 animals are skipped, so animals that leave the study early are handled.
 - Why: no assumption of normality or of a particular curve shape, valid for the small group sizes typical of mouse studies, and robust to dropouts.
 
+### 1b. Linear mixed-effects model
+
+- ln(volume) ~ group + time + group × time, with a random intercept and slope for each animal (maximum likelihood), the approach used by TumGrowth (Enot et al., 2018).
+- Likelihood-ratio tests: **group × time** (do growth rates differ?) and **group overall** (any difference in level or rate). Pairwise tests are Holm-adjusted.
+- Uses every measurement; animals with missing days or early removal keep their data. Model-based growth rate per group (± SE) and doubling time are reported.
+
+### 1c. Two-way repeated-measures ANOVA
+
+- Mixed-design (split-plot) ANOVA, group × time, with Greenhouse-Geisser correction (as in GraphPad Prism).
+- Uses days up to the last common day, and only animals with complete data there.
+
+### 1d. Time to endpoint: Kaplan-Meier and log-rank
+
+- Event = first day the tumor reaches a threshold: a fixed volume (mm³) or a multiple of its own baseline (e.g. 4× = quadrupling time, which does not depend on baseline). Estimated by log-linear interpolation. Animals that never reach it are censored.
+- Log-rank test (overall and pairwise, Holm-adjusted), median time, and a Kaplan-Meier plot.
+
 ### 2. Per-animal summary measures (supporting analysis)
 
 Each animal's curve is reduced to one number (summary-measures approach, Matthews et al., 1990, *BMJ*), so each animal contributes exactly one value:
 
 - **Specific growth rate**: slope of ln(V+1) against time (log-linear regression) within the analysis window. It does not depend on starting volume. **Doubling time** = ln2 / growth rate.
 - **Area under the curve (AUC)**: trapezoidal rule from the window start to the **last day on which every animal is still measured**, so early removals do not bias it.
+- **Tumor growth inhibition** at the last common day: T/C % = mean V(treated) / mean V(control) × 100, and TGI % = (1 − ΔT/ΔC) × 100.
 - Compared between groups with Welch's t-test (2 groups) or Welch's ANOVA followed by pairwise Welch t-tests (3+ groups), Holm-adjusted. Non-parametric option: Mann-Whitney U / Kruskal-Wallis.
 
 ### 3. Comparison on each day
@@ -91,6 +110,8 @@ Each animal's curve is reduced to one number (summary-measures approach, Matthew
 ### Different baseline volumes
 
 - The **baseline check** compares starting volumes (V₀) between groups (test on ln(V₀+1)) and flags an imbalance if p < 0.05 or the group means differ by more than 25%.
+- **Normalization options** (Y variable): relative volume V/V₀, % change, increase V − V₀, log2 fold change, or % of the control mean on the same day (T/C %).
+- **Choice of baseline V₀**: the measurement at the window start, each animal's first measurement (useful when start dates differ), or the measurement closest to a chosen day.
 - Recommended fixes:
   1. **ANCOVA**: adjusts each day's comparison for baseline volume. This is the most efficient adjustment when baselines differ (Vickers & Altman, 2001, *BMJ*).
   2. **Relative tumor volume (V / V₀)** or **% change from baseline**: normalizes each animal to its own starting size.
@@ -110,6 +131,7 @@ Each animal's curve is reduced to one number (summary-measures approach, Matthew
 - Baldwin T, et al. (2007). Wound healing response is a major contributor to the severity of cutaneous leishmaniasis in the ear model of infection. *Parasite Immunology* 29:501–513.
 - Matthews JNS, et al. (1990). Analysis of serial measurements in medical research. *BMJ* 300:230–235.
 - Vickers AJ, Altman DG (2001). Analysing controlled trials with baseline and follow up measurements. *BMJ* 323:1123–1124.
+- Enot DP, et al. (2018). TumGrowth: an open-access web tool for the statistical analysis of tumor growth curves. *OncoImmunology* 7:e1462431.
 - Holm S (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics* 6:65–70.
 
 ## Privacy
