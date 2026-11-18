@@ -8,9 +8,14 @@ authors:
     affiliation: "University of Wisconsin-Madison"
     orcid: "https://orcid.org/0000-0002-5414-403X"
 version: 1.0.0
+doi: 10.5281/zenodo.24329547
 date-released: 2026-11-17
 license: MIT
 url: "https://g864245133-ops.github.io/tumor-growth/"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24329547
+    description: "Zenodo archive of v1.0.0"
 repository-code: "https://github.com/g864245133-ops/tumor-growth"
 keywords:
   - tumor growth
