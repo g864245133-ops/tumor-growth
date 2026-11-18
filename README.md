@@ -4,6 +4,8 @@ A free, browser-based tool for analyzing caliper tumor measurements: volume calc
 
 **Use it online:** https://g864245133-ops.github.io/tumor-growth/
 
+**Author:** Xiaoyue Gao, University of Wisconsin-Madison ([ORCID 0000-0002-5414-403X](https://orcid.org/0000-0002-5414-403X))
+
 ## Input (long format, one row per measurement)
 
 | Sample | Group | Width | Length | Date | Day_injection | Day_treatment |
@@ -133,6 +135,27 @@ Each animal's curve is reduced to one number (summary-measures approach, Matthew
 - Vickers AJ, Altman DG (2001). Analysing controlled trials with baseline and follow up measurements. *BMJ* 323:1123–1124.
 - Enot DP, et al. (2018). TumGrowth: an open-access web tool for the statistical analysis of tumor growth curves. *OncoImmunology* 7:e1462431.
 - Holm S (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics* 6:65–70.
+
+## How to cite
+
+If this tool helps your work, please cite it (GitHub's **"Cite this repository"** button, top right, gives APA and BibTeX formats):
+
+> Gao X. *Tumor Growth Analysis: a browser-based tool for tumor volume and growth-curve statistics* (v1.0.0). 2026. https://github.com/g864245133-ops/tumor-growth
+
+## License
+
+Released under the [MIT License](LICENSE): free to use, modify and share, including commercially, as long as the copyright notice is kept.
+
+### Third-party libraries
+
+Loaded from cdnjs at run time (not bundled in this repository):
+
+- [Chart.js](https://www.chartjs.org/) 4.4.1, MIT License
+- [SheetJS Community Edition](https://sheetjs.com/) (xlsx) 0.18.5, Apache License 2.0
+
+## Disclaimer
+
+This tool is provided for research use only, without warranty of any kind. Check that the chosen statistical methods suit your experimental design, and confirm important results with a statistician or established software where appropriate.
 
 ## Privacy
 
