@@ -1,5 +1,7 @@
 # Tumor Growth Analysis
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24329547.svg)](https://doi.org/10.5281/zenodo.24329547)
+
 A free, browser-based tool for analyzing caliper tumor measurements: volume calculation, group growth curves, and statistics for whole curves and individual days.
 
 **Use it online:** https://g864245133-ops.github.io/tumor-growth/
@@ -140,7 +142,7 @@ Each animal's curve is reduced to one number (summary-measures approach, Matthew
 
 If this tool helps your work, please cite it (GitHub's **"Cite this repository"** button, top right, gives APA and BibTeX formats):
 
-> Gao X. *Tumor Growth Analysis: a browser-based tool for tumor volume and growth-curve statistics* (v1.0.0). 2026. https://github.com/g864245133-ops/tumor-growth
+> Gao X. *Tumor Growth Analysis: a browser-based tool for tumor volume and growth-curve statistics* (v1.0.0). Zenodo; 2026. https://doi.org/10.5281/zenodo.24329547
 
 ## License
 
