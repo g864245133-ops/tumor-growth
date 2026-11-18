@@ -203,6 +203,20 @@ white     ...</pre>
         <label class="muted" style="display:block"><input type="checkbox" id="logY"> Log Y axis</label></div>
       <div><label class="f">Minimum n per group to plot a mean</label><input type="number" id="minN" value="2" min="1"></div>
     </div>
+    <div style="margin-bottom:12px"><label class="f">Axes (leave blank for automatic)</label>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">
+        <div><label class="f">X min</label><input type="number" id="axXmin" placeholder="auto"></div>
+        <div><label class="f">X max</label><input type="number" id="axXmax" placeholder="auto"></div>
+        <div><label class="f">X tick step</label><input type="number" id="axXstep" placeholder="auto" min="0"></div>
+        <div><label class="f">Y min</label><input type="number" id="axYmin" placeholder="auto"></div>
+        <div><label class="f">Y max</label><input type="number" id="axYmax" placeholder="auto"></div>
+        <div><label class="f">Y tick step</label><input type="number" id="axYstep" placeholder="auto" min="0"></div>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr 1fr auto;gap:8px;margin-top:8px;align-items:end">
+        <div><label class="f">X axis title</label><input type="text" id="axXtitle" placeholder="auto" style="font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></div>
+        <div><label class="f">Y axis title</label><input type="text" id="axYtitle" placeholder="auto" style="font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></div>
+        <button id="axReset">Reset axes</button>
+      </div></div>
     <div><label class="f">Colors (click a swatch to change, or apply a palette)</label>
       <div class="row" id="colorRow"></div>
       <div class="row" id="presetRow" style="margin-top:8px"></div></div>
@@ -741,7 +755,7 @@ function drawCharts(){
     ds.push({label:g,data:pts,_err:e,borderColor:c,backgroundColor:c,borderWidth:2.2,pointRadius:3.5,pointHoverRadius:5,order:1}); });
   const showStars=$('showStars').checked&&r.groups.length>=2;
   $('starNote').textContent=showStars?(r.groups.length===2?`Stars: per-day ${pairTestName(r.test)} p-value (${r.groups[0]} vs ${r.groups[1]}).`:`Stars: per-day overall ${testName(r.test,r.groups.length)} p-value across all groups (see table C for pairwise results).`)+' Whole-curve p-values are in table 6A.':'';
-  const overlay={id:'ov',afterDatasetsDraw(c){ const ctx=c.ctx,y=c.scales.y,x=c.scales.x; ctx.save();
+  const overlay={id:'ov',afterDatasetsDraw(c){ const ctx=c.ctx,y=c.scales.y,x=c.scales.x,ca=c.chartArea; ctx.save(); ctx.beginPath(); ctx.rect(ca.left,ca.top-24,ca.right-ca.left,ca.bottom-ca.top+24); ctx.clip();
     c.data.datasets.forEach((d,di)=>{ if(!d._err) return; const meta=c.getDatasetMeta(di); if(meta.hidden) return;
       meta.data.forEach((pt,i)=>{ const e=d._err[i], v=d.data[i].y; if(!isFinite(e)||!(e>0)) return;
         const lo=logY?Math.max(v-e,v*0.05):v-e; const t=y.getPixelForValue(v+e), b=y.getPixelForValue(lo);
@@ -751,14 +765,15 @@ function drawCharts(){
       const px=x.getPixelForValue(d.x); if(px<x.left-1||px>x.right+1) return;
       ctx.fillStyle='#1d2330'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.fillText(s,px,Math.max(y.top+10,y.getPixelForValue(top)-8)); });
     ctx.restore(); }};
+  const ax={xmin:num($('axXmin').value),xmax:num($('axXmax').value),xstep:num($('axXstep').value),ymin:num($('axYmin').value),ymax:num($('axYmax').value),ystep:num($('axYstep').value),xt:$('axXtitle').value.trim(),yt:$('axYtitle').value.trim()};
   let ymax=0; ds.forEach(d=>d.data.forEach((p,i)=>{ ymax=Math.max(ymax,p.y+(d._err&&isFinite(d._err[i])?d._err[i]:0)); }));
   chart=new Chart($('chart'),{type:'line',data:{datasets:ds},
     options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:true,
       plugins:{legend:{position:'top',labels:{filter:(it,data)=>!data.datasets[it.datasetIndex]._ind,boxWidth:14,boxHeight:3}},
         title:{display:true,text:'Tumor growth'+(err!=='none'&&$('showMean').checked?` (mean ± ${err.toUpperCase()})`:''),font:{size:14}},
         tooltip:{callbacks:{label:c=>{ const d=c.dataset; const e=d._err?d._err[c.dataIndex]:NaN; return `${d._ind?d._g+' / ':''}${d.label}: ${fv(c.parsed.y)}${isFinite(e)?' ± '+fv(e):''}`; }}}},
-      scales:{x:{type:'linear',min:r.start,max:r.end,title:{display:true,text:xLabel(r.mode)},grid:{color:'#f0f2f5'}},
-        y:{type:logY?'logarithmic':'linear',beginAtZero:!logY&&r.metric!=='pct',suggestedMax:logY?undefined:ymax*1.08,title:{display:true,text:yLabel(r.metric)},grid:{color:'#eef0f3'}}}},
+      scales:{x:{type:'linear',min:isFinite(ax.xmin)?ax.xmin:r.start,max:isFinite(ax.xmax)?ax.xmax:r.end,ticks:{stepSize:ax.xstep>0?ax.xstep:undefined},title:{display:true,text:ax.xt||xLabel(r.mode)},grid:{color:'#f0f2f5'}},
+        y:{type:logY?'logarithmic':'linear',beginAtZero:!logY&&r.metric!=='pct',min:isFinite(ax.ymin)&&(!logY||ax.ymin>0)?ax.ymin:undefined,max:isFinite(ax.ymax)?ax.ymax:undefined,suggestedMax:logY||isFinite(ax.ymax)?undefined:ymax*1.08,ticks:{stepSize:!logY&&ax.ystep>0?ax.ystep:undefined},title:{display:true,text:ax.yt||yLabel(r.metric)},grid:{color:'#eef0f3'}}}},
     plugins:[whiteBg,overlay]});
   // summary chart
   const key=$('sumSel').value; const lab={rate:'Growth rate (ln volume / day)',auc:'AUC ('+yLabel(r.metric).replace(/ \(.*\)/,'')+' × day)',dt:'Doubling time (days)'}[key];
@@ -949,6 +964,8 @@ $('xMode').onchange=()=>{ $('winFrom').value=''; $('winTo').value=''; compute();
 ['formula','metric','test','logT','cmp','ctrl','adj','align'].forEach(id=>$(id).onchange=compute);
 ['winFrom','winTo','step','nperm'].forEach(id=>$(id).onchange=compute);
 ['err','showInd','showMean','showStars','logY','minN','sumSel'].forEach(id=>$(id).onchange=drawCharts);
+['axXmin','axXmax','axXstep','axYmin','axYmax','axYstep','axXtitle','axYtitle'].forEach(id=>$(id).oninput=drawCharts);
+$('axReset').onclick=()=>{ ['axXmin','axXmax','axXstep','axYmin','axYmax','axYstep','axXtitle','axYtitle'].forEach(id=>$(id).value=''); drawCharts(); };
 $('colorRow').oninput=e=>{ const g=e.target.dataset.g; if(!g) return; colorMap[g]=e.target.value; drawCharts(); };
 $('presetRow').onclick=e=>{ const b=e.target.closest('.preset'); if(!b||!R) return; curPreset=b.dataset.p; const p=PRESETS[curPreset]; R.groups.forEach((g,i)=>colorMap[g]=p[i%p.length]); drawCharts(); };
 $('qcTable').onchange=e=>{ const k=e.target.dataset.k; if(!k) return; e.target.checked?excludedMice.delete(k):excludedMice.add(k); compute(); };
