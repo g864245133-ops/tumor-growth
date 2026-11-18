@@ -13,6 +13,27 @@ A free, browser-based tool for analyzing caliper tumor measurements: volume calc
 
 Sample, Group, Width and Length are required, plus at least one of Date / Day from injection / Day from treatment. Paste from Excel or upload `.xlsx / .csv / .txt`. Click **Load example data** on the page to see a worked example.
 
+### Built-in data converter (lab-notebook layout)
+
+If you record measurements in blocks, with dates across the columns and L / W under each date, click **"My data has dates across columns → convert it"**:
+
+```
+OE        10.14          10.16          10.19
+          L      W       L      W       L      W
+white     5.1    4.0     6.0    4.4     9.3    6.5
+red       ...
+(blank row)
+Control   10.14          10.16          10.19
+          L      W       L      W       L      W
+white     ...
+```
+
+- Upload the `.xlsx` (any sheet) or paste the copied cells. Several group blocks on one sheet are detected automatically.
+- Dates such as `10.14` are read as Month.Day (Day.Month can be selected) in the chosen year. When Excel turned `10.10` into `10.1`, the reading that keeps the dates in order is chosen and flagged for checking. A year change (Dec → Jan) is handled.
+- Enter the tumor injection and treatment start dates (for all groups or per group) to add `Day_injection` and `Day_treatment` columns.
+- Empty cells are skipped. Half-filled pairs (L without W, or W without L) are reported.
+- Click **Use this data in the analysis** to load it, or copy the converted table.
+
 ## Tumor volume
 
 - Default: **V = L × W² / 2** (modified ellipsoid formula). Alternative: **V = π/6 × L × W²**.
@@ -60,7 +81,7 @@ Each animal's curve is reduced to one number (summary-measures approach, Matthew
 
 - Animals are aligned by **day from treatment start** (or day from injection), not by calendar date. Each animal's day 0 is its own start, so cohorts enrolled on different dates are directly comparable.
 - If some rows have a Date but no day number, the day is filled in from that animal's other rows (date − day = that animal's start date).
-- If only dates are given, days are counted from each animal's first measurement.
+- If only dates are given, days can be counted from the earliest date in the study (shared day 0) or from each animal's first measurement.
 
 ### Animals measured on different days
 
